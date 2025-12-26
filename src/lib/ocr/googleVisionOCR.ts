@@ -219,18 +219,6 @@ function extractNumbersWithPositions(
         }
       }
 
-      // Ignorer les chiffres isolés du préfixe seulement s'ils sont en haut de l'image
-      if (serialPrefix && (text === serialPrefix[0] || text === serialPrefix[1])) {
-        const vertices = annotation.boundingPoly?.vertices || [];
-        if (vertices.length >= 4) {
-          const yValues = vertices.map(v => v.y || 0).filter(y => y > 0);
-          const yCenter = yValues.length > 0 ? yValues.reduce((a, b) => a + b, 0) / yValues.length : 0;
-          if (yCenter < 60) {
-            console.log(`Ignoring "${text}" at Y=${yCenter} - likely part of serial number`);
-            continue;
-          }
-        }
-      }
     }
 
     // Ignorer LOTOQUINE et variations
