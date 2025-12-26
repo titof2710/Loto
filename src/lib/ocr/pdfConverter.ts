@@ -23,11 +23,11 @@ export async function convertPDFToImages(
   file: File,
   scale: number = 2
 ): Promise<PDFPageImage[]> {
-  // Import dynamique pour éviter les erreurs SSR
-  const pdfjsLib = await import('pdfjs-dist');
+  // Import dynamique du build legacy pour compatibilité navigateur
+  const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
 
-  // Configurer le worker PDF.js
-  pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+  // Configurer le worker PDF.js avec unpkg (plus fiable)
+  pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/legacy/build/pdf.worker.min.mjs`;
 
   // Lire le fichier comme ArrayBuffer
   const arrayBuffer = await file.arrayBuffer();
