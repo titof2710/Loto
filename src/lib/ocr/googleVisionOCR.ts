@@ -16,7 +16,7 @@ export interface GoogleVisionResult {
 }
 
 // Clé API Google Cloud Vision
-const GOOGLE_API_KEY = 'AIzaSyDDPF9zg28IwGKcAyZbqHHZIv5GkTWGyf0';
+const GOOGLE_API_KEY = 'AIzaSyBOL0Fw0Y0vzKTdmCAsX7hfaV_Uufufuy0';
 
 /**
  * Extrait les numéros d'une image via Google Cloud Vision API
