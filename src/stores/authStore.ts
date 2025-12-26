@@ -29,15 +29,19 @@ export const useAuthStore = create<AuthStore>((set) => ({
 
   login: async (email: string, password: string) => {
     try {
+      console.log('[AUTH] Tentative de login:', email);
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
       });
 
+      console.log('[AUTH] Response status:', res.status);
       const data = await res.json();
+      console.log('[AUTH] Response data:', data);
 
       if (!res.ok) {
+        console.error('[AUTH] Login failed:', data.error);
         return { success: false, error: data.error || 'Erreur de connexion' };
       }
 
