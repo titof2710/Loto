@@ -1,17 +1,27 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import { Camera, Upload, Edit3, Check, X, Shuffle, Loader2, AlertCircle } from 'lucide-react';
+import { Camera, Upload, Edit3, Check, X, Shuffle, Loader2, AlertCircle, ChevronLeft, ChevronRight, Grid3X3 } from 'lucide-react';
 import { useGameStore } from '@/stores/gameStore';
 import { generateRandomPlanche, createCartonFromNumbers } from '@/lib/game/cartonUtils';
 import { CartonGrid } from '@/components/game/CartonGrid';
-import { useOCR } from '@/hooks/useOCR';
 import { cn } from '@/lib/utils/cn';
 import { useRouter } from 'next/navigation';
 import { v4 as uuidv4 } from 'uuid';
 import type { Planche, Carton } from '@/types';
+import { detectCartonBorders, type DetectedCarton } from '@/lib/ocr/imagePreprocessing';
+import { processDetectedCartons, validateCartonNumbers, buildCartonGrid, type CartonOCRResult } from '@/lib/ocr/tesseractOCR';
 
-type Mode = 'choose' | 'camera' | 'ocr-result' | 'manual' | 'edit';
+type Mode = 'choose' | 'camera' | 'detecting' | 'ocr-processing' | 'ocr-results' | 'manual' | 'edit';
+
+interface CartonResult {
+  index: number;
+  numbers: number[];
+  isValid: boolean;
+  imageData: string;
+  isEditing: boolean;
+  editText: string;
+}
 
 export default function ScanPage() {
   const router = useRouter();
@@ -26,8 +36,12 @@ export default function ScanPage() {
   const [error, setError] = useState<string>('');
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
 
-  // OCR Hook
-  const { isProcessing, progress, result: ocrResult, error: ocrError, processImage, reset: resetOCR } = useOCR();
+  // État OCR
+  const [detectedCartons, setDetectedCartons] = useState<DetectedCarton[]>([]);
+  const [ocrResults, setOcrResults] = useState<CartonResult[]>([]);
+  const [currentOcrCarton, setCurrentOcrCarton] = useState(0);
+  const [ocrProgress, setOcrProgress] = useState({ current: 0, total: 0, percentage: 0 });
+  const [selectedCartonIndex, setSelectedCartonIndex] = useState(0);
 
   // Ajouter une planche générée aléatoirement (pour test)
   const handleGenerateRandom = () => {
@@ -45,18 +59,120 @@ export default function ScanPage() {
     // Afficher l'image
     const imageUrl = URL.createObjectURL(file);
     setCapturedImage(imageUrl);
-    setMode('ocr-result');
+    setMode('detecting');
+    setError('');
 
-    // Lancer l'OCR
-    await processImage(file);
+    try {
+      // Détecter les cartons sur la planche
+      const detected = await detectCartonBorders(file);
+      setDetectedCartons(detected);
+
+      if (detected.length === 0) {
+        setError('Aucun carton détecté. Essayez avec une meilleure photo.');
+        setMode('choose');
+        return;
+      }
+
+      // Lancer l'OCR sur chaque carton détecté
+      setMode('ocr-processing');
+      setOcrProgress({ current: 0, total: detected.length, percentage: 0 });
+
+      const results = await processDetectedCartons(detected, (cartonIndex, progress) => {
+        setCurrentOcrCarton(cartonIndex);
+        setOcrProgress({
+          current: cartonIndex,
+          total: detected.length,
+          percentage: ((cartonIndex + progress) / detected.length) * 100,
+        });
+      });
+
+      // Convertir en résultats éditables
+      const cartonResults: CartonResult[] = results.map((r) => {
+        const validation = validateCartonNumbers(r.numbers);
+        return {
+          index: r.cartonIndex,
+          numbers: r.numbers,
+          isValid: validation.valid,
+          imageData: r.imageData,
+          isEditing: false,
+          editText: r.numbers.join(' '),
+        };
+      });
+
+      setOcrResults(cartonResults);
+      setMode('ocr-results');
+    } catch (err) {
+      console.error('Erreur OCR:', err);
+      setError('Erreur lors de l\'analyse. Essayez la saisie manuelle.');
+      setMode('choose');
+    }
   };
 
-  // Utiliser les résultats OCR
-  const handleUseOCRResult = () => {
-    if (ocrResult && ocrResult.numbers.length > 0) {
-      setCartonNumbers(ocrResult.numbers.join(' '));
-      setMode('manual');
+  // Éditer les numéros d'un carton
+  const handleEditCarton = (index: number) => {
+    setOcrResults((prev) =>
+      prev.map((r, i) => ({
+        ...r,
+        isEditing: i === index,
+        editText: r.numbers.join(' '),
+      }))
+    );
+  };
+
+  // Sauvegarder l'édition d'un carton
+  const handleSaveCartonEdit = (index: number) => {
+    const result = ocrResults[index];
+    const numbers = parseNumbers(result.editText);
+    const validation = validateCartonNumbers(numbers);
+
+    setOcrResults((prev) =>
+      prev.map((r, i) =>
+        i === index
+          ? {
+              ...r,
+              numbers,
+              isValid: validation.valid,
+              isEditing: false,
+            }
+          : r
+      )
+    );
+  };
+
+  // Mettre à jour le texte d'édition
+  const handleEditTextChange = (index: number, text: string) => {
+    setOcrResults((prev) =>
+      prev.map((r, i) => (i === index ? { ...r, editText: text } : r))
+    );
+  };
+
+  // Confirmer tous les cartons OCR et créer la planche
+  const handleConfirmOCR = () => {
+    const validCartons: Carton[] = [];
+
+    for (const result of ocrResults) {
+      if (result.numbers.length === 15) {
+        const carton = createCartonFromNumbers(result.numbers, validCartons.length);
+        if (carton) {
+          validCartons.push(carton);
+        }
+      }
     }
+
+    if (validCartons.length === 0) {
+      setError('Aucun carton valide. Corrigez les numéros ou passez en saisie manuelle.');
+      return;
+    }
+
+    const planche: Planche = {
+      id: uuidv4(),
+      name: plancheName || `Planche ${new Date().toLocaleTimeString('fr-FR')}`,
+      cartons: validCartons,
+      imageUrl: capturedImage || undefined,
+    };
+
+    addPlanche(planche);
+    router.push('/game');
   };
 
   // Parser les numéros entrés
@@ -65,10 +181,10 @@ export default function ScanPage() {
       .split(/[\s,;]+/)
       .map((s) => parseInt(s.trim(), 10))
       .filter((n) => !isNaN(n) && n >= 1 && n <= 90);
-    return [...new Set(nums)]; // Enlever les doublons
+    return [...new Set(nums)];
   };
 
-  // Ajouter un carton
+  // Ajouter un carton manuellement
   const handleAddCarton = () => {
     setError('');
     const numbers = parseNumbers(cartonNumbers);
@@ -115,9 +231,19 @@ export default function ScanPage() {
   const handleBack = () => {
     setMode('choose');
     setCapturedImage(null);
-    resetOCR();
+    setDetectedCartons([]);
+    setOcrResults([]);
     setCartonNumbers('');
     setError('');
+  };
+
+  // Navigation entre cartons détectés
+  const handlePrevCarton = () => {
+    setSelectedCartonIndex((prev) => Math.max(0, prev - 1));
+  };
+
+  const handleNextCarton = () => {
+    setSelectedCartonIndex((prev) => Math.min(ocrResults.length - 1, prev + 1));
   };
 
   // Mode choix
@@ -127,7 +253,7 @@ export default function ScanPage() {
         <div className="text-center py-6">
           <h2 className="text-xl font-bold mb-2">Ajouter une planche</h2>
           <p className="text-[var(--muted-foreground)]">
-            Scannez ou saisissez vos 12 cartons
+            Scannez votre planche de 12 cartons
           </p>
         </div>
 
@@ -144,18 +270,18 @@ export default function ScanPage() {
         </div>
 
         <div className="space-y-3">
-          {/* Prendre une photo */}
+          {/* Prendre une photo de la planche */}
           <button
             onClick={() => fileInputRef.current?.click()}
             className="flex items-center gap-4 w-full p-4 bg-[var(--card)] rounded-xl border border-[var(--border)] hover:border-[var(--primary)] transition-colors"
           >
             <div className="w-12 h-12 rounded-full bg-[var(--primary)]/10 flex items-center justify-center">
-              <Camera className="w-6 h-6 text-[var(--primary)]" />
+              <Grid3X3 className="w-6 h-6 text-[var(--primary)]" />
             </div>
             <div className="text-left flex-1">
-              <div className="font-semibold">Prendre une photo</div>
+              <div className="font-semibold">Scanner la planche A4</div>
               <div className="text-sm text-[var(--muted-foreground)]">
-                Scanner un carton avec la caméra
+                Photo des 12 cartons en une fois
               </div>
             </div>
           </button>
@@ -224,107 +350,282 @@ export default function ScanPage() {
     );
   }
 
-  // Mode résultat OCR
-  if (mode === 'ocr-result') {
+  // Mode détection en cours
+  if (mode === 'detecting') {
     return (
       <div className="p-4 space-y-4">
         <div className="flex items-center justify-between">
           <button onClick={handleBack} className="p-2 -ml-2 text-[var(--muted-foreground)]">
             <X className="w-5 h-5" />
           </button>
-          <h2 className="font-bold">Analyse OCR</h2>
+          <h2 className="font-bold">Détection des cartons</h2>
           <div className="w-9" />
         </div>
 
-        {/* Image capturée */}
         {capturedImage && (
           <div className="relative rounded-lg overflow-hidden border border-[var(--border)]">
-            <img src={capturedImage} alt="Carton scanné" className="w-full" />
-            {isProcessing && (
-              <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                <div className="text-center text-white">
-                  <Loader2 className="w-8 h-8 animate-spin mx-auto mb-2" />
-                  <p className="text-sm">Analyse en cours... {Math.round(progress * 100)}%</p>
-                </div>
+            <img src={capturedImage} alt="Planche scannée" className="w-full" />
+            <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+              <div className="text-center text-white">
+                <Loader2 className="w-8 h-8 animate-spin mx-auto mb-2" />
+                <p className="text-sm">Détection des 12 cartons...</p>
               </div>
-            )}
+            </div>
           </div>
         )}
+      </div>
+    );
+  }
 
-        {/* Résultats OCR */}
-        {!isProcessing && ocrResult && (
+  // Mode OCR en cours
+  if (mode === 'ocr-processing') {
+    return (
+      <div className="p-4 space-y-4">
+        <div className="flex items-center justify-between">
+          <button onClick={handleBack} className="p-2 -ml-2 text-[var(--muted-foreground)]">
+            <X className="w-5 h-5" />
+          </button>
+          <h2 className="font-bold">Lecture OCR</h2>
+          <div className="w-9" />
+        </div>
+
+        <div className="space-y-4">
+          {/* Grille des cartons détectés */}
+          <div className="grid grid-cols-3 gap-2">
+            {detectedCartons.map((carton, i) => (
+              <div
+                key={i}
+                className={cn(
+                  'relative rounded-lg overflow-hidden border-2',
+                  i < currentOcrCarton
+                    ? 'border-green-500'
+                    : i === currentOcrCarton
+                    ? 'border-[var(--primary)] animate-pulse'
+                    : 'border-[var(--border)]'
+                )}
+              >
+                <img src={carton.imageData} alt={`Carton ${i + 1}`} className="w-full" />
+                {i < currentOcrCarton && (
+                  <div className="absolute inset-0 bg-green-500/20 flex items-center justify-center">
+                    <Check className="w-6 h-6 text-green-500" />
+                  </div>
+                )}
+                {i === currentOcrCarton && (
+                  <div className="absolute inset-0 bg-[var(--primary)]/20 flex items-center justify-center">
+                    <Loader2 className="w-6 h-6 text-[var(--primary)] animate-spin" />
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Barre de progression */}
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <span>Carton {ocrProgress.current + 1}/{ocrProgress.total}</span>
+              <span>{Math.round(ocrProgress.percentage)}%</span>
+            </div>
+            <div className="h-2 bg-[var(--muted)] rounded-full overflow-hidden">
+              <div
+                className="h-full bg-[var(--primary)] transition-all duration-300"
+                style={{ width: `${ocrProgress.percentage}%` }}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Mode résultats OCR
+  if (mode === 'ocr-results') {
+    const selectedResult = ocrResults[selectedCartonIndex];
+    const validCount = ocrResults.filter((r) => r.isValid).length;
+
+    return (
+      <div className="p-4 space-y-4">
+        <div className="flex items-center justify-between">
+          <button onClick={handleBack} className="p-2 -ml-2 text-[var(--muted-foreground)]">
+            <X className="w-5 h-5" />
+          </button>
+          <h2 className="font-bold">Vérification</h2>
+          <button
+            onClick={handleConfirmOCR}
+            disabled={validCount === 0}
+            className={cn(
+              'p-2 -mr-2',
+              validCount > 0 ? 'text-[var(--primary)]' : 'text-[var(--muted-foreground)]'
+            )}
+          >
+            <Check className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Statistiques */}
+        <div className="flex gap-2 text-sm">
+          <span className="px-3 py-1 bg-green-500/10 text-green-600 rounded-full">
+            {validCount} valides
+          </span>
+          <span className="px-3 py-1 bg-orange-500/10 text-orange-600 rounded-full">
+            {ocrResults.length - validCount} à corriger
+          </span>
+        </div>
+
+        {/* Navigation entre cartons */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handlePrevCarton}
+            disabled={selectedCartonIndex === 0}
+            className="p-2 rounded-lg bg-[var(--muted)] disabled:opacity-50"
+          >
+            <ChevronLeft className="w-5 h-5" />
+          </button>
+
+          <div className="flex-1 flex gap-1 justify-center">
+            {ocrResults.map((r, i) => (
+              <button
+                key={i}
+                onClick={() => setSelectedCartonIndex(i)}
+                className={cn(
+                  'w-6 h-6 rounded text-xs font-bold transition-all',
+                  i === selectedCartonIndex
+                    ? 'bg-[var(--primary)] text-white scale-110'
+                    : r.isValid
+                    ? 'bg-green-500/20 text-green-600'
+                    : 'bg-orange-500/20 text-orange-600'
+                )}
+              >
+                {i + 1}
+              </button>
+            ))}
+          </div>
+
+          <button
+            onClick={handleNextCarton}
+            disabled={selectedCartonIndex === ocrResults.length - 1}
+            className="p-2 rounded-lg bg-[var(--muted)] disabled:opacity-50"
+          >
+            <ChevronRight className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Détail du carton sélectionné */}
+        {selectedResult && (
           <div className="space-y-3">
-            <div className="p-4 bg-[var(--card)] rounded-lg border border-[var(--border)]">
+            {/* Image du carton */}
+            <div className="rounded-lg overflow-hidden border border-[var(--border)]">
+              <img src={selectedResult.imageData} alt={`Carton ${selectedCartonIndex + 1}`} className="w-full" />
+            </div>
+
+            {/* Numéros détectés */}
+            <div className={cn(
+              'p-4 rounded-lg border',
+              selectedResult.isValid
+                ? 'bg-green-500/5 border-green-500/30'
+                : 'bg-orange-500/5 border-orange-500/30'
+            )}>
               <div className="flex items-center justify-between mb-2">
-                <span className="font-medium">Numéros détectés</span>
-                <span className="text-sm text-[var(--muted-foreground)]">
-                  Confiance: {Math.round(ocrResult.confidence)}%
+                <span className="font-medium">Carton #{selectedCartonIndex + 1}</span>
+                <span className={cn(
+                  'text-sm px-2 py-0.5 rounded',
+                  selectedResult.isValid
+                    ? 'bg-green-500/20 text-green-600'
+                    : 'bg-orange-500/20 text-orange-600'
+                )}>
+                  {selectedResult.numbers.length}/15 numéros
                 </span>
               </div>
-              <div className="flex flex-wrap gap-2">
-                {ocrResult.numbers.length > 0 ? (
-                  ocrResult.numbers.map((num) => (
-                    <span
-                      key={num}
-                      className="px-2 py-1 bg-[var(--primary)] text-white rounded text-sm font-bold"
+
+              {selectedResult.isEditing ? (
+                <div className="space-y-2">
+                  <textarea
+                    value={selectedResult.editText}
+                    onChange={(e) => handleEditTextChange(selectedCartonIndex, e.target.value)}
+                    className="w-full px-3 py-2 rounded border border-[var(--border)] bg-[var(--card)] font-mono text-sm"
+                    rows={2}
+                    placeholder="Entrez les 15 numéros séparés par des espaces"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleSaveCartonEdit(selectedCartonIndex)}
+                      className="flex-1 py-2 bg-[var(--primary)] text-white rounded-lg font-medium text-sm"
                     >
-                      {num}
-                    </span>
-                  ))
-                ) : (
-                  <span className="text-[var(--muted-foreground)]">Aucun numéro détecté</span>
-                )}
-              </div>
-              <p className="text-xs text-[var(--muted-foreground)] mt-2">
-                {ocrResult.numbers.length} numéros trouvés
-              </p>
+                      Valider
+                    </button>
+                    <button
+                      onClick={() => setOcrResults((prev) =>
+                        prev.map((r, i) => (i === selectedCartonIndex ? { ...r, isEditing: false } : r))
+                      )}
+                      className="px-4 py-2 bg-[var(--muted)] rounded-lg text-sm"
+                    >
+                      Annuler
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {selectedResult.numbers.length > 0 ? (
+                      selectedResult.numbers.map((num) => (
+                        <span
+                          key={num}
+                          className="px-2 py-0.5 bg-[var(--primary)] text-white rounded text-sm font-bold"
+                        >
+                          {num}
+                        </span>
+                      ))
+                    ) : (
+                      <span className="text-[var(--muted-foreground)] text-sm">Aucun numéro détecté</span>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => handleEditCarton(selectedCartonIndex)}
+                    className="w-full py-2 bg-[var(--muted)] rounded-lg text-sm font-medium"
+                  >
+                    Corriger les numéros
+                  </button>
+                </>
+              )}
             </div>
 
-            {ocrError && (
+            {!selectedResult.isValid && (
               <div className="p-3 bg-orange-500/10 border border-orange-500/30 rounded-lg flex items-start gap-2">
                 <AlertCircle className="w-5 h-5 text-orange-500 flex-shrink-0 mt-0.5" />
-                <p className="text-sm text-orange-600 dark:text-orange-400">{ocrError}</p>
+                <p className="text-sm text-orange-600 dark:text-orange-400">
+                  Ce carton nécessite une correction. Il faut exactement 15 numéros entre 1 et 90.
+                </p>
               </div>
             )}
-
-            <div className="flex gap-2">
-              <button
-                onClick={handleUseOCRResult}
-                disabled={ocrResult.numbers.length === 0}
-                className={cn(
-                  'flex-1 py-3 rounded-lg font-medium',
-                  ocrResult.numbers.length > 0
-                    ? 'bg-[var(--primary)] text-white'
-                    : 'bg-[var(--muted)] text-[var(--muted-foreground)]'
-                )}
-              >
-                Utiliser ces numéros
-              </button>
-              <button
-                onClick={() => setMode('manual')}
-                className="flex-1 py-3 rounded-lg font-medium bg-[var(--muted)]"
-              >
-                Saisie manuelle
-              </button>
-            </div>
-
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="w-full py-3 rounded-lg font-medium border border-[var(--border)]"
-            >
-              Rescanner
-            </button>
           </div>
         )}
 
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          capture="environment"
-          className="hidden"
-          onChange={handleImageCapture}
-        />
+        {error && (
+          <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-600 dark:text-red-400 text-sm">
+            {error}
+          </div>
+        )}
+
+        {/* Boutons d'action */}
+        <div className="flex gap-2">
+          <button
+            onClick={handleConfirmOCR}
+            disabled={validCount === 0}
+            className={cn(
+              'flex-1 py-3 rounded-lg font-medium',
+              validCount > 0
+                ? 'bg-green-500 text-white'
+                : 'bg-[var(--muted)] text-[var(--muted-foreground)]'
+            )}
+          >
+            Confirmer {validCount} carton{validCount > 1 ? 's' : ''}
+          </button>
+          <button
+            onClick={() => setMode('manual')}
+            className="px-4 py-3 rounded-lg font-medium bg-[var(--muted)]"
+          >
+            Saisie manuelle
+          </button>
+        </div>
       </div>
     );
   }
