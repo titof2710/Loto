@@ -228,12 +228,20 @@ function parsePrizesFlexible(text: string): LotoPrize[] {
   // Stratégie: pour chaque lot attendu (1-24), chercher TOUTES les occurrences
   // de "N TYPE" dans le texte, puis garder la PREMIÈRE qui a le bon type
   // Cela évite de confondre "1 Q 1 Smartphone" avec une quantité "1 Q" ailleurs
+  //
+  // IMPORTANT: Pour les numéros < 10, on doit s'assurer qu'on ne matche pas
+  // un numéro plus grand (ex: "11 Q" ne doit pas matcher pour le lot 1)
+  // On utilise une "word boundary" ou on vérifie que le caractère avant n'est pas un chiffre
 
   for (let lotNum = 1; lotNum <= 24; lotNum++) {
     const expectedType = getExpectedType(lotNum);
 
     // Trouver TOUTES les occurrences de ce numéro suivi du type attendu
-    const pattern = new RegExp(`(?:^|\\s)(${lotNum})\\s+(${expectedType})\\s`, 'gi');
+    // Pour les numéros < 10, on s'assure qu'il n'y a pas de chiffre avant
+    // Pattern: début ou (espace + non-chiffre) puis le numéro puis espace puis type puis espace
+    const pattern = lotNum < 10
+      ? new RegExp(`(?:^|[^0-9])(${lotNum})\\s+(${expectedType})\\s`, 'gi')
+      : new RegExp(`(?:^|\\s)(${lotNum})\\s+(${expectedType})\\s`, 'gi');
     const matches: Array<{ index: number; fullMatch: string }> = [];
 
     let match;
