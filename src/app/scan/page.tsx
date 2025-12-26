@@ -190,38 +190,53 @@ export default function ScanPage() {
 
   // Confirmer tous les cartons OCR et créer la planche
   const handleConfirmOCR = () => {
-    console.log('handleConfirmOCR called, ocrResults:', ocrResults);
-    const validCartons: Carton[] = [];
+    try {
+      console.log('=== handleConfirmOCR START ===');
+      console.log('ocrResults count:', ocrResults.length);
+      const validCartons: Carton[] = [];
 
-    for (const result of ocrResults) {
-      console.log(`Carton ${result.index}: ${result.numbers.length} numéros, isValid: ${result.isValid}`);
-      if (result.numbers.length === 15) {
-        const carton = createCartonFromNumbers(result.numbers, validCartons.length, result.serialNumber);
-        console.log(`createCartonFromNumbers result:`, carton);
-        if (carton) {
-          validCartons.push(carton);
+      for (let i = 0; i < ocrResults.length; i++) {
+        const result = ocrResults[i];
+        console.log(`Processing carton ${i}: ${result.numbers.length} numéros`);
+
+        if (result.numbers.length === 15) {
+          try {
+            const carton = createCartonFromNumbers(result.numbers, validCartons.length, result.serialNumber);
+            if (carton) {
+              validCartons.push(carton);
+              console.log(`Carton ${i} added successfully`);
+            } else {
+              console.warn(`Carton ${i}: createCartonFromNumbers returned null`);
+            }
+          } catch (err) {
+            console.error(`Error creating carton ${i}:`, err);
+          }
         }
       }
+
+      console.log(`=== Total valid cartons: ${validCartons.length} ===`);
+
+      if (validCartons.length === 0) {
+        setError('Aucun carton valide. Corrigez les numéros ou passez en saisie manuelle.');
+        return;
+      }
+
+      const planche: Planche = {
+        id: uuidv4(),
+        name: plancheName || `Planche ${new Date().toLocaleTimeString('fr-FR')}`,
+        cartons: validCartons,
+        imageUrl: capturedImage || undefined,
+      };
+
+      console.log('Adding planche with', planche.cartons.length, 'cartons');
+      addPlanche(planche);
+      console.log('Planche added, navigating to /game');
+      router.push('/game');
+      console.log('=== handleConfirmOCR END ===');
+    } catch (error) {
+      console.error('handleConfirmOCR FATAL ERROR:', error);
+      setError(`Erreur: ${error instanceof Error ? error.message : 'Erreur inconnue'}`);
     }
-
-    console.log(`Total valid cartons: ${validCartons.length}`);
-
-    if (validCartons.length === 0) {
-      setError('Aucun carton valide. Corrigez les numéros ou passez en saisie manuelle.');
-      return;
-    }
-
-    const planche: Planche = {
-      id: uuidv4(),
-      name: plancheName || `Planche ${new Date().toLocaleTimeString('fr-FR')}`,
-      cartons: validCartons,
-      imageUrl: capturedImage || undefined,
-    };
-
-    console.log('Adding planche:', planche);
-    addPlanche(planche);
-    console.log('Navigating to /game');
-    router.push('/game');
   };
 
   // Parser les numéros entrés
