@@ -5,11 +5,17 @@ import type { Planche, Carton, DrawnBall, WinEvent, CartonProgress, WinType, Cel
 // Fonctions de persistance avec Vercel KV
 async function savePlanchesToKV(planches: Planche[]) {
   try {
-    console.log('💾 Sauvegarde planches vers KV:', planches.length, 'planches');
+    // Enlever les images pour réduire la taille du payload (évite erreur 413)
+    const planchesWithoutImages = planches.map(p => ({
+      ...p,
+      imageUrl: undefined, // Ne pas sauvegarder les images base64
+    }));
+
+    console.log('💾 Sauvegarde planches vers KV:', planchesWithoutImages.length, 'planches');
     const response = await fetch('/api/planches', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(planches),
+      body: JSON.stringify(planchesWithoutImages),
     });
     if (!response.ok) {
       console.error('❌ Erreur HTTP sauvegarde KV:', response.status, response.statusText);
