@@ -285,6 +285,18 @@ function parsePrizesFlexible(text: string): LotoPrize[] {
       .replace(/\s+/g, ' ')
       .trim();
 
+    // Si la description est trop courte et ne contient pas de prix (€),
+    // c'est peut-être que l'OCR a lu en colonnes et le prix est coupé
+    // Chercher un prix proche (ex: "50€", "100€", "1000€")
+    if (!description.includes('€') && description.length < 30) {
+      // Chercher un prix juste après dans le texte brut
+      const afterDesc = normalized.substring(endIdx, endIdx + 20);
+      const priceMatch = afterDesc.match(/^[\s]*(\d+€)/);
+      if (priceMatch) {
+        description = description + ' ' + priceMatch[1];
+      }
+    }
+
     if (description.length > 2) {
       console.log(`✓ Prize #${lotNum} ${expectedType}: ${description.substring(0, 50)}`);
       prizes.push({
