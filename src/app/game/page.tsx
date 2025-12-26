@@ -3,10 +3,13 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Play, Square, RotateCcw, Mic, MicOff, Plus, Volume2, Gift, Zap, Pause, Youtube, X, Maximize2, Minimize2 } from 'lucide-react';
 import { useGameStore } from '@/stores/gameStore';
+import { useTirageStore } from '@/stores/tirageStore';
 import { NumberPad } from '@/components/game/NumberPad';
 import { DrawnBalls } from '@/components/game/DrawnBalls';
 import { PlancheView } from '@/components/game/PlancheView';
 import { WinAlert } from '@/components/game/WinAlert';
+import { CurrentPrize, PrizeWonButton } from '@/components/game/CurrentPrize';
+import { TirageSelector, useTirageSelector } from '@/components/game/TirageSelector';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
 import { useAlerts } from '@/hooks/useAlerts';
 import { cn } from '@/lib/utils/cn';
@@ -45,6 +48,23 @@ export default function GamePage() {
     toggleVoiceRecognition,
     getAllCartonsProgress,
   } = useGameStore();
+
+  // Store tirage pour les cadeaux
+  const {
+    allTirages,
+    currentTirage,
+    isLoading: tirageLoading,
+    isPrizesLoading,
+    loadTirages,
+    selectTirage,
+    advanceToNextType,
+    nextGroup,
+    getCurrentPrize,
+    isLastTypeInGroup,
+  } = useTirageStore();
+
+  // Hook pour le sélecteur de tirage
+  const tirageSelector = useTirageSelector();
 
   const [activeWin, setActiveWin] = useState<typeof wins[0] | null>(null);
   const [viewMode, setViewMode] = useState<'keyboard' | 'cartons'>('keyboard');
@@ -88,6 +108,11 @@ export default function GamePage() {
     stop: stopVoice,
   } = useSpeechRecognition(handleVoiceNumber);
 
+  // Charger les tirages au montage
+  useEffect(() => {
+    loadTirages();
+  }, [loadTirages]);
+
   // Gérer l'activation/désactivation de la reconnaissance vocale
   useEffect(() => {
     if (voiceRecognitionEnabled && isPlaying && voiceSupported) {
@@ -98,12 +123,17 @@ export default function GamePage() {
   }, [voiceRecognitionEnabled, isPlaying, voiceSupported, startVoice, stopVoice]);
 
   // Afficher les nouveaux gains (seulement si c'est un NOUVEAU gain)
+  // Et avancer automatiquement au cadeau suivant
   useEffect(() => {
     if (wins.length > lastWinsCountRef.current) {
       // Il y a un nouveau gain
       const lastWin = wins[wins.length - 1];
       setActiveWin(lastWin);
       alertWin(lastWin.type);
+
+      // Avancer automatiquement au type suivant (Q→DQ→CP)
+      // puisque c'est TON carton qui a gagné
+      advanceToNextType();
     }
     // Reset le compteur si wins a été vidé (nouveau cadeau)
     if (wins.length === 0) {
@@ -111,7 +141,20 @@ export default function GamePage() {
     } else {
       lastWinsCountRef.current = wins.length;
     }
-  }, [wins, alertWin]);
+  }, [wins, alertWin, advanceToNextType]);
+
+  // Gérer le clic sur "Cadeau gagné" (quand un autre joueur gagne)
+  const handlePrizeWon = useCallback(() => {
+    if (isLastTypeInGroup()) {
+      // On est sur CP, passer au groupe suivant et effacer les boules
+      nextGroup();
+      clearDrawnBalls();
+      lastWinsCountRef.current = 0;
+    } else {
+      // Passer au type suivant (Q→DQ ou DQ→CP)
+      advanceToNextType();
+    }
+  }, [isLastTypeInGroup, nextGroup, clearDrawnBalls, advanceToNextType]);
 
   // Vérifier les alertes "plus qu'un"
   const cartonsProgress = getAllCartonsProgress();
@@ -203,6 +246,9 @@ export default function GamePage() {
     );
   }
 
+  // Cadeau actuel
+  const currentPrize = getCurrentPrize();
+
   return (
     <div className="p-4 space-y-4">
       {/* Alerte de gain */}
@@ -210,36 +256,41 @@ export default function GamePage() {
         <WinAlert win={activeWin} onDismiss={() => setActiveWin(null)} />
       )}
 
+      {/* Modal sélection tirage */}
+      {tirageSelector.isOpen && (
+        <TirageSelector
+          tirages={allTirages}
+          currentTirageId={currentTirage?.id}
+          isLoading={tirageLoading}
+          onSelect={selectTirage}
+          onRefresh={loadTirages}
+          onClose={tirageSelector.close}
+        />
+      )}
+
+      {/* Cadeau actuel */}
+      <CurrentPrize
+        prize={currentPrize}
+        tirageName={currentTirage?.title}
+        isLoading={isPrizesLoading}
+        onChangeTirage={tirageSelector.open}
+      />
+
       {/* Contrôles de partie */}
       <div className="flex items-center gap-2">
         {!isPlaying ? (
-          <>
-            <button
-              onClick={startGame}
-              className="flex-1 flex items-center justify-center gap-2 py-3 bg-green-500 text-white rounded-lg font-medium"
-            >
-              <Play className="w-5 h-5" />
-              {drawnBalls.length > 0 ? 'Reprendre' : 'Démarrer la partie'}
-            </button>
-            {drawnBalls.length > 0 && (
-              <button
-                onClick={() => {
-                  clearDrawnBalls();
-                  lastWinsCountRef.current = 0;
-                }}
-                className="flex items-center justify-center gap-2 py-3 px-4 bg-blue-500 text-white rounded-lg font-medium"
-                title="Nouveau cadeau"
-              >
-                <Gift className="w-5 h-5" />
-                Nouveau cadeau
-              </button>
-            )}
-          </>
+          <button
+            onClick={startGame}
+            className="flex-1 flex items-center justify-center gap-2 py-3 bg-green-500 text-white rounded-lg font-medium"
+          >
+            <Play className="w-5 h-5" />
+            {drawnBalls.length > 0 ? 'Reprendre' : 'Démarrer la partie'}
+          </button>
         ) : (
           <>
             <button
               onClick={stopGame}
-              className="flex-1 flex items-center justify-center gap-2 py-3 bg-orange-500 text-white rounded-lg font-medium"
+              className="flex items-center justify-center gap-2 py-3 px-4 bg-gray-500 text-white rounded-lg font-medium"
             >
               <Square className="w-5 h-5" />
               Pause
@@ -314,6 +365,15 @@ export default function GamePage() {
           <Youtube className="w-5 h-5" />
         </button>
       </div>
+
+      {/* Bouton "Cadeau gagné" - bien visible pendant le jeu */}
+      {isPlaying && currentPrize && (
+        <PrizeWonButton
+          onClick={handlePrizeWon}
+          isLastInGroup={isLastTypeInGroup()}
+          disabled={!isPlaying}
+        />
+      )}
 
       {/* Contrôle vitesse simulation */}
       {isSimulating && (
