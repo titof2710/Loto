@@ -1,6 +1,6 @@
 /**
  * Détection intelligente des cartons de loto sur une image
- * Basée sur la détection du rectangle de la planche puis découpage en grille
+ * Approche simplifiée: découpage direct en grille 2x6 après détection de l'en-tête
  */
 
 export interface BoundingBox {
@@ -458,7 +458,127 @@ function refineGridWithBorders(
 }
 
 /**
+ * Trouve la première ligne horizontale noire (bordure supérieure des cartons)
+ * en scannant de haut en bas
+ */
+function findFirstBlackLine(
+  imageData: ImageData,
+  width: number,
+  height: number
+): number {
+  const data = imageData.data;
+
+  for (let y = 0; y < height * 0.4; y++) {
+    let blackCount = 0;
+    let totalSampled = 0;
+
+    // Échantillonner sur toute la largeur
+    for (let x = Math.floor(width * 0.1); x < width * 0.9; x += 5) {
+      const idx = (y * width + x) * 4;
+      const r = data[idx];
+      const g = data[idx + 1];
+      const b = data[idx + 2];
+
+      totalSampled++;
+      // Pixel noir ou très sombre
+      if (r < 50 && g < 50 && b < 50) {
+        blackCount++;
+      }
+    }
+
+    // Si plus de 50% de la ligne est noire, c'est une bordure
+    if (totalSampled > 0 && blackCount / totalSampled > 0.5) {
+      console.log(`Première ligne noire trouvée à y=${y}`);
+      return y;
+    }
+  }
+
+  // Par défaut, supposer que l'en-tête fait 10% de l'image
+  return Math.floor(height * 0.1);
+}
+
+/**
+ * Trouve la dernière ligne horizontale noire (bordure inférieure des cartons)
+ * en scannant de bas en haut
+ */
+function findLastBlackLine(
+  imageData: ImageData,
+  width: number,
+  height: number
+): number {
+  const data = imageData.data;
+
+  for (let y = height - 1; y > height * 0.6; y--) {
+    let blackCount = 0;
+    let totalSampled = 0;
+
+    for (let x = Math.floor(width * 0.1); x < width * 0.9; x += 5) {
+      const idx = (y * width + x) * 4;
+      const r = data[idx];
+      const g = data[idx + 1];
+      const b = data[idx + 2];
+
+      totalSampled++;
+      if (r < 50 && g < 50 && b < 50) {
+        blackCount++;
+      }
+    }
+
+    if (totalSampled > 0 && blackCount / totalSampled > 0.5) {
+      console.log(`Dernière ligne noire trouvée à y=${y}`);
+      return y;
+    }
+  }
+
+  return height;
+}
+
+/**
+ * Trouve la bordure verticale centrale (entre les 2 colonnes de cartons)
+ */
+function findCenterVerticalLine(
+  imageData: ImageData,
+  width: number,
+  height: number,
+  startY: number,
+  endY: number
+): number {
+  const data = imageData.data;
+  const centerX = Math.floor(width / 2);
+
+  // Chercher autour du centre
+  for (let offset = 0; offset < width * 0.1; offset++) {
+    for (const x of [centerX + offset, centerX - offset]) {
+      if (x < 0 || x >= width) continue;
+
+      let blackCount = 0;
+      let totalSampled = 0;
+
+      for (let y = startY; y < endY; y += 5) {
+        const idx = (y * width + x) * 4;
+        const r = data[idx];
+        const g = data[idx + 1];
+        const b = data[idx + 2];
+
+        totalSampled++;
+        if (r < 50 && g < 50 && b < 50) {
+          blackCount++;
+        }
+      }
+
+      if (totalSampled > 0 && blackCount / totalSampled > 0.3) {
+        console.log(`Ligne verticale centrale trouvée à x=${x}`);
+        return x;
+      }
+    }
+  }
+
+  return centerX;
+}
+
+/**
  * Détecte les 12 cartons sur une planche de loto
+ * Approche simplifiée: trouve les bordures puis découpe en grille 2x6
  */
 export async function detectCartons(source: File | string): Promise<DetectedCarton[]> {
   const canvas = await loadImage(source);
@@ -469,35 +589,57 @@ export async function detectCartons(source: File | string): Promise<DetectedCart
   const width = canvas.width;
   const height = canvas.height;
 
-  // 1. Détecter les limites de la planche (ignorer l'arrière-plan sombre)
-  const plancheBounds = detectPlancheBounds(imageData, width, height);
+  console.log(`Image: ${width}x${height}`);
 
-  console.log(`Planche détectée: x=${plancheBounds.x}, y=${plancheBounds.y}, w=${plancheBounds.width}, h=${plancheBounds.height}`);
+  // 1. Trouver les bordures de la zone des cartons
+  const topY = findFirstBlackLine(imageData, width, height);
+  const bottomY = findLastBlackLine(imageData, width, height);
+  const centerX = findCenterVerticalLine(imageData, width, height, topY, bottomY);
 
-  // Vérifier que la planche détectée est raisonnable
-  if (plancheBounds.width < width * 0.3 || plancheBounds.height < height * 0.3) {
-    console.log('Planche trop petite, utilisation de l\'image entière');
-    plancheBounds.x = 0;
-    plancheBounds.y = 0;
-    plancheBounds.width = width;
-    plancheBounds.height = height;
+  console.log(`Zone cartons: topY=${topY}, bottomY=${bottomY}, centerX=${centerX}`);
+
+  // 2. Calculer les dimensions
+  const cartonsHeight = bottomY - topY;
+  const cartonHeight = cartonsHeight / 6; // 6 lignes de cartons
+
+  // Largeur: de la bordure gauche au centre, et du centre à la bordure droite
+  // On suppose que les cartons occupent ~95% de la largeur
+  const marginX = width * 0.02;
+  const leftColStart = marginX;
+  const leftColEnd = centerX - 2;
+  const rightColStart = centerX + 2;
+  const rightColEnd = width - marginX;
+
+  const rectangles: BoundingBox[] = [];
+
+  // 3. Créer la grille 2x6
+  for (let row = 0; row < 6; row++) {
+    const y = topY + row * cartonHeight;
+    const h = cartonHeight;
+
+    // Marge pour éviter les bordures noires
+    const marginY = h * 0.03;
+
+    // Colonne gauche
+    rectangles.push({
+      x: leftColStart,
+      y: y + marginY,
+      width: leftColEnd - leftColStart,
+      height: h - marginY * 2,
+    });
+
+    // Colonne droite
+    rectangles.push({
+      x: rightColStart,
+      y: y + marginY,
+      width: rightColEnd - rightColStart,
+      height: h - marginY * 2,
+    });
   }
 
-  // 2. Essayer de détecter les bordures noires des cartons
-  let rectangles = refineGridWithBorders(imageData, plancheBounds, width, height);
+  console.log(`${rectangles.length} cartons créés`);
 
-  // 3. Si pas assez de rectangles, utiliser la grille par défaut
-  if (rectangles.length < 12) {
-    console.log('Utilisation de la grille par défaut 2x6');
-    rectangles = splitPlancheIntoGrid(canvas, plancheBounds);
-  }
-
-  // Limiter à 12 cartons
-  rectangles = rectangles.slice(0, 12);
-
-  console.log(`${rectangles.length} cartons détectés`);
-
-  // Extraire chaque carton comme image séparée
+  // 4. Extraire chaque carton comme image séparée
   const cartons: DetectedCarton[] = rectangles.map((bounds, index) => {
     const cartonCanvas = extractRegion(canvas, bounds);
     return {
