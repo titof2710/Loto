@@ -34,202 +34,199 @@ const typeToOffset: Record<PrizeType, number> = {
 // Mapping offset -> type
 const offsetToType: PrizeType[] = ['Q', 'DQ', 'CP'];
 
-export const useTirageStore = create<TirageStore>()(
-  persist(
-    (set, get) => ({
-      // État initial
-      allTirages: [],
-      currentTirage: null,
+export const useTirageStore = create<TirageStore>()((set, get) => ({
+  // État initial
+  allTirages: [],
+  currentTirage: null,
+  currentGroupIndex: 0,
+  currentTypeInGroup: 'Q',
+  isLoading: false,
+  isPrizesLoading: false,
+  error: null,
+
+  // Charger la liste des tirages depuis lotofiesta.fr
+  loadTirages: async () => {
+    set({ isLoading: true, error: null });
+
+    try {
+      const response = await fetch('/api/lotofiesta');
+      if (!response.ok) {
+        throw new Error('Erreur chargement tirages');
+      }
+
+      const tirages: LotoTirage[] = await response.json();
+      set({ allTirages: tirages, isLoading: false });
+
+      // Si pas de tirage sélectionné, sélectionner le premier (aujourd'hui)
+      const state = get();
+      if (!state.currentTirage && tirages.length > 0) {
+        // Trouver le tirage du jour ou prendre le premier
+        const todayTirage = findTodaysTirage(tirages) || tirages[0];
+        await get().selectTirage(todayTirage.id);
+      }
+    } catch (error) {
+      console.error('Erreur loadTirages:', error);
+      set({ isLoading: false, error: 'Impossible de charger les tirages' });
+    }
+  },
+
+  // Sélectionner un tirage et charger ses lots
+  selectTirage: async (tirageId: string) => {
+    const state = get();
+    const tirage = state.allTirages.find(t => t.id === tirageId);
+
+    if (!tirage) {
+      console.error('Tirage non trouvé:', tirageId);
+      return;
+    }
+
+    // Si les lots ne sont pas chargés, les charger
+    let updatedTirage = tirage;
+    if (tirage.prizes.length === 0) {
+      updatedTirage = await get().loadPrizesForTirage(tirage);
+    }
+
+    set({
+      currentTirage: updatedTirage,
       currentGroupIndex: 0,
       currentTypeInGroup: 'Q',
-      isLoading: false,
-      isPrizesLoading: false,
-      error: null,
+    });
+  },
 
-      // Charger la liste des tirages depuis lotofiesta.fr
-      loadTirages: async () => {
-        set({ isLoading: true, error: null });
+  // Charger les lots pour un tirage via OCR (avec cache Upstash Redis)
+  loadPrizesForTirage: async (tirage: LotoTirage): Promise<LotoTirage> => {
+    set({ isPrizesLoading: true });
 
-        try {
-          const response = await fetch('/api/lotofiesta');
-          if (!response.ok) {
-            throw new Error('Erreur chargement tirages');
-          }
+    try {
+      const response = await fetch('/api/lotofiesta/prizes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tirageUrl: tirage.url }),
+      });
 
-          const tirages: LotoTirage[] = await response.json();
-          set({ allTirages: tirages, isLoading: false });
+      if (!response.ok) {
+        throw new Error('Erreur OCR lots');
+      }
 
-          // Si pas de tirage sélectionné, sélectionner le premier (aujourd'hui)
-          const state = get();
-          if (!state.currentTirage && tirages.length > 0) {
-            // Trouver le tirage du jour ou prendre le premier
-            const todayTirage = findTodaysTirage(tirages) || tirages[0];
-            await get().selectTirage(todayTirage.id);
-          }
-        } catch (error) {
-          console.error('Erreur loadTirages:', error);
-          set({ isLoading: false, error: 'Impossible de charger les tirages' });
-        }
-      },
+      const data = await response.json();
+      const prizes: LotoPrize[] = data.prizes || [];
 
-      // Sélectionner un tirage et charger ses lots
-      selectTirage: async (tirageId: string) => {
-        const state = get();
-        const tirage = state.allTirages.find(t => t.id === tirageId);
+      console.log('Lots chargés:', prizes.length, data.fromCache ? '(depuis cache)' : '(OCR)');
 
-        if (!tirage) {
-          console.error('Tirage non trouvé:', tirageId);
-          return;
-        }
+      // Mettre à jour le tirage avec les lots
+      const updatedTirage: LotoTirage = {
+        ...tirage,
+        prizes,
+        prizesImageUrl: data.prizesImageUrl,
+      };
 
-        // Si les lots ne sont pas chargés, les charger
-        let updatedTirage = tirage;
-        if (tirage.prizes.length === 0) {
-          updatedTirage = await get().loadPrizesForTirage(tirage);
-        }
+      // Mettre à jour dans la liste
+      set(state => ({
+        allTirages: state.allTirages.map(t =>
+          t.id === tirage.id ? updatedTirage : t
+        ),
+        isPrizesLoading: false,
+      }));
 
-        set({
-          currentTirage: updatedTirage,
-          currentGroupIndex: 0,
-          currentTypeInGroup: 'Q',
-        });
-      },
+      return updatedTirage;
+    } catch (error) {
+      console.error('Erreur loadPrizesForTirage:', error);
+      set({ isPrizesLoading: false });
+      return tirage;
+    }
+  },
 
-      // Charger les lots pour un tirage via OCR
-      loadPrizesForTirage: async (tirage: LotoTirage): Promise<LotoTirage> => {
-        set({ isPrizesLoading: true });
+  // Passer au type suivant dans le groupe (Q→DQ→CP)
+  // Appelé quand quelqu'un gagne (bouton "Cadeau gagné" ou auto si c'est toi)
+  advanceToNextType: () => {
+    const state = get();
+    const currentOffset = typeToOffset[state.currentTypeInGroup];
 
-        try {
-          const response = await fetch('/api/lotofiesta/prizes', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ tirageUrl: tirage.url }),
-          });
+    if (currentOffset < 2) {
+      // Passer au type suivant (Q→DQ ou DQ→CP)
+      set({ currentTypeInGroup: offsetToType[currentOffset + 1] });
+    } else {
+      // On est sur CP, passer au groupe suivant
+      get().nextGroup();
+    }
+  },
 
-          if (!response.ok) {
-            throw new Error('Erreur OCR lots');
-          }
+  // Passer au groupe suivant (cadeaux 4,5,6 puis 7,8,9 etc.)
+  // Efface aussi les boules tirées (via gameStore depuis game/page.tsx)
+  nextGroup: () => {
+    set(state => ({
+      currentGroupIndex: state.currentGroupIndex + 3,
+      currentTypeInGroup: 'Q',
+    }));
+  },
 
-          const data = await response.json();
-          const prizes: LotoPrize[] = data.prizes || [];
+  // Revenir au premier groupe
+  resetToFirstGroup: () => {
+    set({
+      currentGroupIndex: 0,
+      currentTypeInGroup: 'Q',
+    });
+  },
 
-          console.log('Lots chargés:', prizes.length);
+  // Obtenir le numéro du lot attendu (même si le lot n'existe pas)
+  getCurrentPrizeNumber: (): number => {
+    const state = get();
+    const offset = typeToOffset[state.currentTypeInGroup];
+    return state.currentGroupIndex + offset + 1; // +1 car les lots commencent à 1
+  },
 
-          // Mettre à jour le tirage avec les lots
-          const updatedTirage: LotoTirage = {
-            ...tirage,
-            prizes,
-            prizesImageUrl: data.prizesImageUrl,
-          };
+  // Obtenir le cadeau actuel
+  // Les lots sont numérotés 1, 2, 3... où chaque groupe de 3 est Q, DQ, CP
+  // Donc lot #1 = Q du groupe 1, lot #2 = DQ du groupe 1, lot #3 = CP du groupe 1
+  // lot #4 = Q du groupe 2, etc.
+  getCurrentPrize: (): LotoPrize | null => {
+    const state = get();
+    if (!state.currentTirage || state.currentTirage.prizes.length === 0) {
+      return null;
+    }
 
-          // Mettre à jour dans la liste
-          set(state => ({
-            allTirages: state.allTirages.map(t =>
-              t.id === tirage.id ? updatedTirage : t
-            ),
-            isPrizesLoading: false,
-          }));
+    const expectedPrizeNumber = get().getCurrentPrizeNumber();
 
-          return updatedTirage;
-        } catch (error) {
-          console.error('Erreur loadPrizesForTirage:', error);
-          set({ isPrizesLoading: false });
-          return tirage;
-        }
-      },
+    console.log(`getCurrentPrize: groupIndex=${state.currentGroupIndex}, type=${state.currentTypeInGroup}, expectedNumber=${expectedPrizeNumber}`);
 
-      // Passer au type suivant dans le groupe (Q→DQ→CP)
-      // Appelé quand quelqu'un gagne (bouton "Cadeau gagné" ou auto si c'est toi)
-      advanceToNextType: () => {
-        const state = get();
-        const currentOffset = typeToOffset[state.currentTypeInGroup];
+    // Chercher le lot par son numéro
+    const prize = state.currentTirage.prizes.find(p => p.number === expectedPrizeNumber);
 
-        if (currentOffset < 2) {
-          // Passer au type suivant (Q→DQ ou DQ→CP)
-          set({ currentTypeInGroup: offsetToType[currentOffset + 1] });
-        } else {
-          // On est sur CP, passer au groupe suivant
-          get().nextGroup();
-        }
-      },
+    if (!prize) {
+      console.log('Lot non trouvé, lots disponibles:', state.currentTirage.prizes.map(p => `#${p.number} ${p.type}`));
+    }
 
-      // Passer au groupe suivant (cadeaux 4,5,6 puis 7,8,9 etc.)
-      // Efface aussi les boules tirées (via gameStore depuis game/page.tsx)
-      nextGroup: () => {
-        set(state => ({
-          currentGroupIndex: state.currentGroupIndex + 3,
-          currentTypeInGroup: 'Q',
-        }));
-      },
+    return prize || null;
+  },
 
-      // Revenir au premier groupe
-      resetToFirstGroup: () => {
-        set({
-          currentGroupIndex: 0,
-          currentTypeInGroup: 'Q',
-        });
-      },
+  // Obtenir le prochain cadeau (pour preview)
+  getNextPrize: (): LotoPrize | null => {
+    const state = get();
+    if (!state.currentTirage || state.currentTirage.prizes.length === 0) {
+      return null;
+    }
 
-      // Obtenir le numéro du lot attendu (même si le lot n'existe pas)
-      getCurrentPrizeNumber: (): number => {
-        const state = get();
-        const offset = typeToOffset[state.currentTypeInGroup];
-        return state.currentGroupIndex + offset + 1; // +1 car les lots commencent à 1
-      },
+    const currentOffset = typeToOffset[state.currentTypeInGroup];
+    let nextPrizeNumber: number;
 
-      // Obtenir le cadeau actuel
-      // Les lots sont numérotés 1, 2, 3... où chaque groupe de 3 est Q, DQ, CP
-      // Donc lot #1 = Q du groupe 1, lot #2 = DQ du groupe 1, lot #3 = CP du groupe 1
-      // lot #4 = Q du groupe 2, etc.
-      getCurrentPrize: (): LotoPrize | null => {
-        const state = get();
-        if (!state.currentTirage || state.currentTirage.prizes.length === 0) {
-          return null;
-        }
+    if (currentOffset < 2) {
+      // Prochain dans le même groupe
+      nextPrizeNumber = state.currentGroupIndex + currentOffset + 2; // +2 car on passe au suivant
+    } else {
+      // Premier du groupe suivant
+      nextPrizeNumber = state.currentGroupIndex + 4; // +3 pour groupe suivant, +1 car lots commencent à 1
+    }
 
-        const expectedPrizeNumber = get().getCurrentPrizeNumber();
+    return state.currentTirage.prizes.find(p => p.number === nextPrizeNumber) || null;
+  },
 
-        console.log(`getCurrentPrize: groupIndex=${state.currentGroupIndex}, type=${state.currentTypeInGroup}, expectedNumber=${expectedPrizeNumber}`);
-
-        // Chercher le lot par son numéro
-        const prize = state.currentTirage.prizes.find(p => p.number === expectedPrizeNumber);
-
-        if (!prize) {
-          console.log('Lot non trouvé, lots disponibles:', state.currentTirage.prizes.map(p => `#${p.number} ${p.type}`));
-        }
-
-        return prize || null;
-      },
-
-      // Obtenir le prochain cadeau (pour preview)
-      getNextPrize: (): LotoPrize | null => {
-        const state = get();
-        if (!state.currentTirage || state.currentTirage.prizes.length === 0) {
-          return null;
-        }
-
-        const currentOffset = typeToOffset[state.currentTypeInGroup];
-        let nextPrizeNumber: number;
-
-        if (currentOffset < 2) {
-          // Prochain dans le même groupe
-          nextPrizeNumber = state.currentGroupIndex + currentOffset + 2; // +2 car on passe au suivant
-        } else {
-          // Premier du groupe suivant
-          nextPrizeNumber = state.currentGroupIndex + 4; // +3 pour groupe suivant, +1 car lots commencent à 1
-        }
-
-        return state.currentTirage.prizes.find(p => p.number === nextPrizeNumber) || null;
-      },
-
-      // Vérifie si on est sur le dernier type du groupe (CP)
-      isLastTypeInGroup: (): boolean => {
-        return get().currentTypeInGroup === 'CP';
-      },
-    })
-  // Note: Pas de persist localStorage car le cache est sur Vercel (Upstash Redis)
-  // Les prizes sont cachés côté serveur dans /api/lotofiesta/prizes
-);
+  // Vérifie si on est sur le dernier type du groupe (CP)
+  isLastTypeInGroup: (): boolean => {
+    return get().currentTypeInGroup === 'CP';
+  },
+}));
+// Note: Pas de persist localStorage car le cache est sur Vercel (Upstash Redis)
+// Les prizes sont cachés côté serveur dans /api/lotofiesta/prizes
 
 /**
  * Trouve le tirage du jour
