@@ -2,11 +2,12 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { Trophy, X, Share2, Download, Check } from 'lucide-react';
-import type { WinEvent } from '@/types';
+import type { WinEvent, LotoPrize } from '@/types';
 import { cn } from '@/lib/utils/cn';
 
 interface WinAlertProps {
   win: WinEvent;
+  prize?: LotoPrize | null; // Le cadeau gagné
   onDismiss: () => void;
 }
 
@@ -16,7 +17,7 @@ const winTypeLabels: Record<string, { label: string; color: string; icon: string
   carton_plein: { label: 'CARTON PLEIN !', color: 'bg-yellow-500', icon: '3' },
 };
 
-export function WinAlert({ win, onDismiss }: WinAlertProps) {
+export function WinAlert({ win, prize, onDismiss }: WinAlertProps) {
   const [visible, setVisible] = useState(true);
   const [shared, setShared] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
@@ -160,6 +161,14 @@ export function WinAlert({ win, onDismiss }: WinAlertProps) {
         <p className="text-lg opacity-90">
           Carton #{win.cartonPosition || '?'} - Boule n°{win.atBallNumber}
         </p>
+
+        {/* Cadeau gagné */}
+        {prize && (
+          <div className="bg-white/20 rounded-lg px-4 py-3 mt-3">
+            <p className="text-sm opacity-80 mb-1">Vous avez gagné :</p>
+            <p className="text-xl font-bold">🎁 {prize.description}</p>
+          </div>
+        )}
 
         <p className="text-sm mt-3 opacity-75">
           {win.serialNumber

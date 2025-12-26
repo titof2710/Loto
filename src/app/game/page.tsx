@@ -234,7 +234,7 @@ export default function GamePage() {
     <div className="p-4 space-y-4">
       {/* Alerte de gain */}
       {activeWin && (
-        <WinAlert win={activeWin} onDismiss={() => setActiveWin(null)} />
+        <WinAlert win={activeWin} prize={currentPrize} onDismiss={() => setActiveWin(null)} />
       )}
 
       {/* Modal sélection tirage */}
