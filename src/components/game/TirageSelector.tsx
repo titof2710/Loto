@@ -96,10 +96,10 @@ export function TirageSelector({
 
                   {/* Infos */}
                   <div className="flex-1 min-w-0">
-                    <p className="font-semibold truncate">{tirage.title}</p>
-                    <p className="text-sm text-[var(--muted-foreground)]">{tirage.date}</p>
+                    <p className="font-semibold text-sm leading-tight">{tirage.title}</p>
+                    <p className="text-xs text-[var(--muted-foreground)] mt-1">{tirage.date}</p>
                     {tirage.prizes.length > 0 && (
-                      <p className="text-xs text-[var(--primary)]">
+                      <p className="text-xs text-[var(--primary)] mt-0.5">
                         {tirage.prizes.length} lots
                       </p>
                     )}
