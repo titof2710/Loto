@@ -24,41 +24,16 @@ export async function extractNumbersFromImage(
   onProgress?: (progress: number) => void
 ): Promise<OCRResult> {
   try {
-    // Prétraitement léger pour les images déjà propres (PDF)
-    const preprocessedImage = await preprocessForOCR(imageSource);
+    // Utiliser l'extraction cellule par cellule pour les cartons de loto
+    const numbers = await extractNumbersFromCartonGrid(imageSource);
 
-    // Configuration Tesseract optimisée pour les chiffres uniquement
-    const worker = await Tesseract.createWorker('eng', 1, {
-      logger: (m) => {
-        if (m.status === 'recognizing text' && onProgress) {
-          onProgress(m.progress);
-        }
-      },
-    });
-
-    // Configurer pour ne reconnaître que les chiffres
-    await worker.setParameters({
-      tessedit_char_whitelist: '0123456789 ',
-      tessedit_pageseg_mode: Tesseract.PSM.SINGLE_BLOCK,
-    });
-
-    const result = await worker.recognize(preprocessedImage);
-    await worker.terminate();
-
-    const rawText = result.data.text;
-    const confidence = result.data.confidence;
-
-    console.log('OCR raw text:', rawText);
-
-    // Extraire tous les nombres entre 1 et 90
-    const numbers = extractLotoNumbers(rawText);
-
-    console.log('Extracted numbers:', numbers);
+    // Simuler la progression
+    onProgress?.(1);
 
     return {
-      numbers,
-      confidence,
-      rawText,
+      numbers: numbers.sort((a, b) => a - b),
+      confidence: numbers.length === 15 ? 95 : (numbers.length / 15) * 100,
+      rawText: numbers.join(' '),
     };
   } catch (error) {
     console.error('OCR Error:', error);
@@ -68,6 +43,95 @@ export async function extractNumbersFromImage(
       rawText: '',
     };
   }
+}
+
+/**
+ * Extrait les numéros d'un carton en analysant cellule par cellule
+ * Un carton loto = 3 lignes x 9 colonnes, avec 5 numéros par ligne
+ */
+async function extractNumbersFromCartonGrid(source: string | File): Promise<number[]> {
+  const canvas = await loadImageToCanvas(source);
+  const width = canvas.width;
+  const height = canvas.height;
+
+  // Un carton a 3 lignes et 9 colonnes
+  const cellWidth = width / 9;
+  const cellHeight = height / 3;
+
+  const numbers: number[] = [];
+
+  // Créer un worker Tesseract unique pour toutes les cellules
+  const worker = await Tesseract.createWorker('eng', 1);
+  await worker.setParameters({
+    tessedit_char_whitelist: '0123456789',
+    tessedit_pageseg_mode: Tesseract.PSM.SINGLE_CHAR,
+  });
+
+  // Parcourir chaque cellule
+  for (let row = 0; row < 3; row++) {
+    for (let col = 0; col < 9; col++) {
+      const cellCanvas = document.createElement('canvas');
+      cellCanvas.width = Math.floor(cellWidth);
+      cellCanvas.height = Math.floor(cellHeight);
+
+      const cellCtx = cellCanvas.getContext('2d');
+      if (!cellCtx) continue;
+
+      // Extraire la cellule avec une petite marge
+      const margin = 5;
+      cellCtx.drawImage(
+        canvas,
+        col * cellWidth + margin,
+        row * cellHeight + margin,
+        cellWidth - margin * 2,
+        cellHeight - margin * 2,
+        0,
+        0,
+        cellCanvas.width,
+        cellCanvas.height
+      );
+
+      // Vérifier si la cellule contient quelque chose (pas vide/blanc)
+      const imageData = cellCtx.getImageData(0, 0, cellCanvas.width, cellCanvas.height);
+      const hasContent = checkCellHasContent(imageData);
+
+      if (hasContent) {
+        // OCR sur cette cellule
+        const result = await worker.recognize(cellCanvas.toDataURL('image/png'));
+        const text = result.data.text.trim();
+
+        // Parser le numéro (1 ou 2 chiffres)
+        const num = parseInt(text, 10);
+        if (!isNaN(num) && num >= 1 && num <= 90 && !numbers.includes(num)) {
+          numbers.push(num);
+        }
+      }
+    }
+  }
+
+  await worker.terminate();
+
+  console.log('Numéros extraits par cellule:', numbers);
+  return numbers;
+}
+
+/**
+ * Vérifie si une cellule contient du contenu (pas vide)
+ */
+function checkCellHasContent(imageData: ImageData): boolean {
+  const data = imageData.data;
+  let darkPixels = 0;
+  const total = data.length / 4;
+
+  for (let i = 0; i < data.length; i += 4) {
+    const brightness = (data[i] + data[i + 1] + data[i + 2]) / 3;
+    if (brightness < 100) {
+      darkPixels++;
+    }
+  }
+
+  // Si plus de 2% de pixels sombres, il y a probablement du contenu
+  return darkPixels / total > 0.02;
 }
 
 /**
