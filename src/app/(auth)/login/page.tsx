@@ -22,7 +22,9 @@ export default function LoginPage() {
     const result = await login(email, password);
 
     if (result.success) {
-      router.push('/');
+      console.log('[AUTH] Login success, redirecting...');
+      router.refresh();
+      window.location.href = '/';
     } else {
       setError(result.error || 'Erreur de connexion');
       setIsLoading(false);
