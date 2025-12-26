@@ -112,8 +112,9 @@ export async function extractNumbersWithGoogleVision(
     const rawText = textAnnotations[0]?.description || '';
     console.log('Google Vision raw text:', rawText);
 
-    // Extraire le numéro de série (format XX-XXXX comme "30-0054")
-    const serialInfo = extractSerialNumber(rawText);
+    // Extraire le numéro de série depuis les annotations individuelles (pas le texte brut)
+    // pour éviter de prendre des numéros de l'en-tête
+    const serialInfo = extractSerialNumberFromAnnotations(textAnnotations.slice(1));
     if (serialInfo) {
       console.log('Numéro de série détecté:', serialInfo.serialNumber, '(original:', serialInfo.originalPattern, ')');
     }
@@ -156,6 +157,46 @@ interface TextAnnotation {
   boundingPoly?: {
     vertices: Array<{ x?: number; y?: number }>;
   };
+}
+
+/**
+ * Extrait le numéro de série depuis les annotations individuelles
+ * en ignorant celles qui sont dans la zone d'en-tête (Y < 100)
+ * Format attendu: XX-XXXX (ex: 24-0540, 30-0054)
+ */
+function extractSerialNumberFromAnnotations(annotations: TextAnnotation[]): SerialNumberInfo | undefined {
+  // Chercher un numéro de série dans les annotations avec Y >= 80 (zone carton, pas en-tête)
+  for (const annotation of annotations) {
+    const text = annotation.description?.trim();
+    if (!text) continue;
+
+    // Calculer la position Y
+    const vertices = annotation.boundingPoly?.vertices || [];
+    const yValues = vertices.map(v => v.y || 0).filter(y => y > 0);
+    const yCenter = yValues.length > 0 ? yValues.reduce((a, b) => a + b, 0) / yValues.length : 0;
+
+    // Ignorer les textes trop haut (zone en-tête) - seuil à 80 pour le numéro de série
+    if (yCenter < 80) {
+      continue;
+    }
+
+    // Ignorer les patterns composés comme "001-0668-24-0042"
+    if (text.match(/\d{3}-\d{4}-\d{2}-\d{4}/)) {
+      continue;
+    }
+
+    // Chercher un pattern XX-XXXX exact (numéro de série isolé)
+    const match = text.match(/^(\d{2})-(\d{4})$/);
+    if (match) {
+      console.log(`Found serial number "${text}" at Y=${Math.round(yCenter)}`);
+      return {
+        serialNumber: `${match[1]}-${match[2]}`,
+        originalPattern: text,
+      };
+    }
+  }
+
+  return undefined;
 }
 
 /**
