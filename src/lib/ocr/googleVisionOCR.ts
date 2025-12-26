@@ -185,14 +185,34 @@ function extractNumbersWithPositions(
     const text = annotation.description?.trim();
     if (!text) continue;
 
-    // Ignorer le numéro de série
+    // Ignorer le numéro de série et ses composants
     if (serialInfo) {
       if (text.includes(serialInfo.originalPattern) || text.includes(serialInfo.serialNumber)) {
         continue;
       }
-      // Ignorer les parties du numéro de série
+      // Ignorer les parties du numéro de série (format XX-XXXX)
       if (text.match(/^\d{1,2}-\d{4}$/) || text.match(/^\d-\d{4}$/)) {
         continue;
+      }
+      // Ignorer les chiffres qui font partie du préfixe du numéro de série (ex: "24" de "24-0544")
+      const serialPrefix = serialInfo.serialNumber.split('-')[0]; // "24"
+      const serialSuffix = serialInfo.serialNumber.split('-')[1]; // "0544"
+      if (text === serialPrefix || text === serialSuffix) {
+        continue;
+      }
+      // Ignorer aussi si le texte est juste le premier ou dernier chiffre du préfixe
+      if (serialPrefix && (text === serialPrefix[0] || text === serialPrefix[1])) {
+        // Vérifier si c'est vraiment un numéro de série isolé (position Y très haute)
+        const vertices = annotation.boundingPoly?.vertices || [];
+        if (vertices.length >= 4) {
+          const yValues = vertices.map(v => v.y || 0).filter(y => y > 0);
+          const yCenter = yValues.length > 0 ? yValues.reduce((a, b) => a + b, 0) / yValues.length : 0;
+          // Si le numéro est dans les 15% supérieurs de l'image, c'est probablement le numéro de série
+          if (yCenter < 60) {
+            console.log(`Ignoring "${text}" at Y=${yCenter} - likely part of serial number`);
+            continue;
+          }
+        }
       }
     }
 
@@ -258,7 +278,45 @@ function extractNumbersWithPositions(
 
   console.log('Numbers with rows assigned:', results.map(r => `${r.number}(row${r.row})`).join(', '));
 
-  return results;
+  // Vérifier les conflits : si deux numéros sont assignés à la même cellule (row, column),
+  // garder celui qui a la position Y la plus cohérente avec sa ligne
+  const cellMap = new Map<string, NumberWithPosition[]>();
+  for (const item of results) {
+    const key = `${item.row}-${item.column}`;
+    if (!cellMap.has(key)) {
+      cellMap.set(key, []);
+    }
+    cellMap.get(key)!.push(item);
+  }
+
+  // Filtrer pour garder un seul numéro par cellule
+  const filteredResults: NumberWithPosition[] = [];
+  for (const [, items] of cellMap) {
+    if (items.length === 1) {
+      filteredResults.push(items[0]);
+    } else {
+      // En cas de conflit, garder celui qui a le Y le plus cohérent avec les autres de sa ligne
+      // Pour simplifier, on garde le premier trouvé
+      console.log(`Conflit détecté à la cellule: ${items.map(i => i.number).join(', ')}`);
+      filteredResults.push(items[0]);
+    }
+  }
+
+  // Si on a plus de 15 numéros, c'est qu'il y a eu une erreur de détection
+  // On garde les 15 numéros les plus "certains" (ceux qui sont bien alignés)
+  if (filteredResults.length > 15) {
+    console.log(`Trop de numéros détectés (${filteredResults.length}), filtrage nécessaire`);
+    // Garder les numéros dont la colonne correspond bien au numéro (validation croisée)
+    const validResults = filteredResults.filter(item => {
+      const expectedCol = getColumnForNumber(item.number);
+      return expectedCol === item.column;
+    });
+    if (validResults.length >= 15) {
+      return validResults.slice(0, 15);
+    }
+  }
+
+  return filteredResults;
 }
 
 /**
