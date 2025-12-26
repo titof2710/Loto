@@ -190,11 +190,18 @@ function parsePrizesFromOCRText(text: string): LotoPrize[] {
 
   console.log('Prizes found with line-by-line:', prizes.length);
 
-  // Si le parsing ligne par ligne n'a pas fonctionné, essayer un parsing plus flexible
-  if (prizes.length === 0) {
+  // Si le parsing ligne par ligne n'a pas trouvé assez de lots (minimum 6 = 2 groupes),
+  // ou s'il manque des lots importants (comme le lot #1), essayer le parsing flexible
+  const hasLot1 = prizes.some(p => p.number === 1);
+  if (prizes.length < 6 || !hasLot1) {
+    console.log('Line-by-line insufficient, trying flexible parsing...');
     const flexPrizes = parsePrizesFlexible(text);
     console.log('Prizes found with flexible parsing:', flexPrizes.length);
-    return flexPrizes;
+
+    // Utiliser le résultat qui a le plus de lots
+    if (flexPrizes.length > prizes.length) {
+      return flexPrizes;
+    }
   }
 
   return prizes.sort((a, b) => a.number - b.number);
@@ -216,59 +223,67 @@ function parsePrizesFlexible(text: string): LotoPrize[] {
     .replace(/\s+/g, ' ')
     .trim();
 
-  console.log('Normalized text (first 1000):', normalized.substring(0, 1000));
+  console.log('Normalized text (first 1500):', normalized.substring(0, 1500));
 
-  // Construire les lots attendus (1-24 typiquement pour un loto)
-  // On va chercher chaque lot explicitement
-  for (let lotNum = 1; lotNum <= 24; lotNum++) {
-    const expectedType = getExpectedType(lotNum);
+  // Stratégie: trouver TOUS les marqueurs "N TYPE" où TYPE = Q, DQ ou CP
+  // puis filtrer ceux qui ont le bon type attendu pour leur numéro
+  const allMarkers: Array<{ index: number; fullMatch: string; number: number; type: PrizeType }> = [];
 
-    // Chercher le pattern "N TYPE" suivi d'une description
-    // On cherche le numéro exact suivi du type exact
-    const patterns = [
-      // Pattern avec le numéro au début d'un "mot" (après espace ou début)
-      new RegExp(`(?:^|\\s)${lotNum}\\s+(${expectedType})\\s+`, 'gi'),
-    ];
+  // Pattern global pour trouver tous les "N Q/DQ/CP" dans le texte
+  // On cherche: espace ou début, puis 1-2 chiffres, puis espace(s), puis Q/DQ/CP, puis espace
+  const globalPattern = /(?:^|\s)(\d{1,2})\s+(Q|DQ|CP)\s/gi;
 
-    for (const regex of patterns) {
-      const match = regex.exec(normalized);
-      if (match) {
-        // Trouver la fin de la description (prochain numéro de lot ou fin)
-        const startIdx = match.index + match[0].length;
+  let match;
+  while ((match = globalPattern.exec(normalized)) !== null) {
+    const num = parseInt(match[1], 10);
+    const type = match[2].toUpperCase() as PrizeType;
+    const expectedType = getExpectedType(num);
 
-        // Chercher le prochain lot (N+1, N+2, ou N+3)
-        let endIdx = normalized.length;
-        for (let nextLot = lotNum + 1; nextLot <= lotNum + 3 && nextLot <= 24; nextLot++) {
-          const nextType = getExpectedType(nextLot);
-          const nextPattern = new RegExp(`\\s${nextLot}\\s+${nextType}\\s`, 'gi');
-          const nextMatch = nextPattern.exec(normalized.substring(startIdx));
-          if (nextMatch) {
-            endIdx = startIdx + nextMatch.index;
-            break;
-          }
-        }
+    console.log(`Found marker: "${match[0].trim()}" at index ${match.index}, num=${num}, type=${type}, expected=${expectedType}`);
 
-        let description = normalized.substring(startIdx, endIdx).trim();
+    // Ne garder que si le type correspond au type attendu pour ce numéro
+    if (num >= 1 && num <= 24 && type === expectedType) {
+      allMarkers.push({
+        index: match.index,
+        fullMatch: match[0],
+        number: num,
+        type,
+      });
+    }
+  }
 
-        // Nettoyer la description
-        // Enlever la quantité au début (ex: "1 Tablette" -> "Tablette")
-        description = description.replace(/^\d+\s+/, '');
-        // Enlever les caractères parasites
-        description = description
-          .replace(/[|\\]/g, '')
-          .replace(/\s+/g, ' ')
-          .trim();
+  console.log(`Valid markers found: ${allMarkers.length}`);
 
-        if (description.length > 2 && !prizes.some(p => p.number === lotNum)) {
-          console.log(`✓ Found prize #${lotNum} ${expectedType}: ${description.substring(0, 50)}`);
-          prizes.push({
-            number: lotNum,
-            type: expectedType,
-            description,
-          });
-        }
-        break; // Trouvé, passer au lot suivant
-      }
+  // Trier les marqueurs par position dans le texte
+  allMarkers.sort((a, b) => a.index - b.index);
+
+  // Pour chaque marqueur, extraire la description jusqu'au prochain marqueur
+  for (let i = 0; i < allMarkers.length; i++) {
+    const current = allMarkers[i];
+    const next = allMarkers[i + 1];
+
+    // Position après "N TYPE "
+    const startIdx = current.index + current.fullMatch.length;
+    const endIdx = next ? next.index : normalized.length;
+
+    let description = normalized.substring(startIdx, endIdx).trim();
+
+    // Nettoyer la description
+    // Enlever la quantité au début (ex: "1 Tablette" -> "Tablette")
+    description = description.replace(/^\d+\s+/, '');
+    // Enlever les caractères parasites
+    description = description
+      .replace(/[|\\]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (description.length > 2 && !prizes.some(p => p.number === current.number)) {
+      console.log(`✓ Prize #${current.number} ${current.type}: ${description.substring(0, 50)}`);
+      prizes.push({
+        number: current.number,
+        type: current.type,
+        description,
+      });
     }
   }
 
