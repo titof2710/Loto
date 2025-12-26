@@ -207,10 +207,37 @@ function extractNumbersWithPositions(
         console.log(`Ignoring serial pattern: "${text}"`);
         continue;
       }
+      // Ignorer les patterns composés comme "001-0668-24-0042"
+      if (text.match(/\d{3}-\d{4}-\d{2}-\d{4}/)) {
+        console.log(`Ignoring compound serial: "${text}"`);
+        continue;
+      }
     }
 
     // Ignorer LOTOQUINE et variations
-    if (/lotoquine|lotoouine|lotooline/i.test(text)) {
+    if (/lotoquine|lotoouine|lotooline|otoquine/i.test(text)) {
+      continue;
+    }
+
+    // Ignorer les textes de l'en-tête du PDF (années, dates, noms, etc.)
+    // Années: 2024, 2025, etc.
+    if (text.match(/^20\d{2}$/)) {
+      console.log(`Ignoring year: "${text}"`);
+      continue;
+    }
+    // Heures: 21h00, 20h30, etc.
+    if (text.match(/^\d{1,2}h\d{2}$/i)) {
+      console.log(`Ignoring time: "${text}"`);
+      continue;
+    }
+    // Numéros de téléphone (10 chiffres)
+    if (text.match(/^0\d{9}$/)) {
+      console.log(`Ignoring phone: "${text}"`);
+      continue;
+    }
+    // Mots courants dans l'en-tête
+    if (/^(AS|MURET|FOOTBALL|VENDREDI|SAMEDI|DIMANCHE|LUNDI|MARDI|MERCREDI|JEUDI|DÉC|JAN|FÉV|MAR|AVR|MAI|JUIN|JUIL|AOÛT|SEPT|OCT|NOV|DÉCEMBRE|JANVIER|FÉVRIER|MARS|AVRIL|JUILLET|SEPTEMBRE|OCTOBRE|NOVEMBRE|LBS|CONCEPTS|ANIMATIONS|LOIC|GIOELLO|EMBRE)$/i.test(text)) {
+      console.log(`Ignoring header text: "${text}"`);
       continue;
     }
 
@@ -224,6 +251,13 @@ function extractNumbersWithPositions(
 
     const yCenter = yValues.reduce((a, b) => a + b, 0) / yValues.length;
     const xCenter = xValues.reduce((a, b) => a + b, 0) / xValues.length;
+
+    // Ignorer les textes trop haut dans l'image (zone d'en-tête, Y < 100)
+    // Les numéros de carton commencent généralement vers Y=140+
+    if (yCenter < 100) {
+      console.log(`Ignoring text in header zone (Y=${Math.round(yCenter)}): "${text}"`);
+      continue;
+    }
 
     // Extraire les numéros du texte
     const nums = extractNumbersFromText(text);
