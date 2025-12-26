@@ -2,6 +2,31 @@ import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
 import type { Planche, Carton, DrawnBall, WinEvent, CartonProgress, WinType, Cell } from '@/types';
 
+// Fonctions de persistance avec Vercel KV
+async function savePlanchesToKV(planches: Planche[]) {
+  try {
+    await fetch('/api/planches', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(planches),
+    });
+  } catch (error) {
+    console.error('Erreur sauvegarde KV:', error);
+  }
+}
+
+async function loadPlanchesFromKV(): Promise<Planche[]> {
+  try {
+    const response = await fetch('/api/planches');
+    if (response.ok) {
+      return await response.json();
+    }
+  } catch (error) {
+    console.error('Erreur chargement KV:', error);
+  }
+  return [];
+}
+
 interface GameStore {
   // État
   isPlaying: boolean;
@@ -10,11 +35,13 @@ interface GameStore {
   wins: WinEvent[];
   voiceRecognitionEnabled: boolean;
   startedAt: Date | null;
+  isLoading: boolean;
 
   // Actions planches
   addPlanche: (planche: Planche) => void;
   removePlanche: (plancheId: string) => void;
   clearPlanches: () => void;
+  loadPlanches: () => Promise<void>;
 
   // Actions jeu
   startGame: () => void;
@@ -173,17 +200,35 @@ export const useGameStore = create<GameStore>((set, get) => ({
   wins: [],
   voiceRecognitionEnabled: false,
   startedAt: null,
+  isLoading: true,
 
   // Actions planches
-  addPlanche: (planche) => set((state) => ({
-    planches: [...state.planches, planche],
-  })),
+  addPlanche: (planche) => {
+    set((state) => {
+      const newPlanches = [...state.planches, planche];
+      savePlanchesToKV(newPlanches);
+      return { planches: newPlanches };
+    });
+  },
 
-  removePlanche: (plancheId) => set((state) => ({
-    planches: state.planches.filter(p => p.id !== plancheId),
-  })),
+  removePlanche: (plancheId) => {
+    set((state) => {
+      const newPlanches = state.planches.filter(p => p.id !== plancheId);
+      savePlanchesToKV(newPlanches);
+      return { planches: newPlanches };
+    });
+  },
 
-  clearPlanches: () => set({ planches: [] }),
+  clearPlanches: () => {
+    savePlanchesToKV([]);
+    set({ planches: [] });
+  },
+
+  loadPlanches: async () => {
+    set({ isLoading: true });
+    const planches = await loadPlanchesFromKV();
+    set({ planches, isLoading: false });
+  },
 
   // Actions jeu
   startGame: () => set({

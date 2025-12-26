@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { Header } from "@/components/layout/Header";
+import { StoreProvider } from "@/components/providers/StoreProvider";
 
 export const metadata: Metadata = {
   title: "Loto Fiesta",
@@ -30,11 +31,13 @@ export default function RootLayout({
   return (
     <html lang="fr">
       <body className="antialiased min-h-screen flex flex-col">
-        <Header />
-        <main className="flex-1 pb-20 max-w-lg mx-auto w-full">
-          {children}
-        </main>
-        <BottomNav />
+        <StoreProvider>
+          <Header />
+          <main className="flex-1 pb-20 max-w-lg mx-auto w-full">
+            {children}
+          </main>
+          <BottomNav />
+        </StoreProvider>
       </body>
     </html>
   );
