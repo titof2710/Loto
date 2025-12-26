@@ -416,7 +416,7 @@ export default function GamePage() {
           )}>
             {/* Embed direct du live via l'URL de la chaîne */}
             <iframe
-              src="https://www.youtube.com/embed/live_stream?channel=UC_pN2SI1VDg-HxDqPQHkyOQ&autoplay=1"
+              src="https://www.youtube.com/embed/live_stream?channel=UC3D1VPrTAnlt1tik9KcC4nQ&autoplay=1"
               className="absolute inset-0 w-full h-full"
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
               allowFullScreen
