@@ -6,6 +6,7 @@ export interface OCRResult {
   numbers: number[];
   confidence: number;
   rawText: string;
+  serialNumber?: string; // Numéro de série du carton (ex: "30-0054")
 }
 
 export interface CartonOCRResult {
@@ -14,6 +15,7 @@ export interface CartonOCRResult {
   confidence: number;
   rawText: string;
   imageData: string;
+  serialNumber?: string; // Numéro de série du carton (ex: "30-0054")
 }
 
 /**
@@ -292,6 +294,7 @@ export async function processDetectedCartons(
         confidence: ocrResult.confidence,
         rawText: ocrResult.rawText,
         imageData: carton.imageData,
+        serialNumber: ocrResult.serialNumber,
       });
     } catch (error) {
       console.error(`OCR Error for carton ${i}:`, error);

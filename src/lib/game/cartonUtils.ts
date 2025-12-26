@@ -58,8 +58,9 @@ export function getColumnForNumber(num: number): number {
 /**
  * Crée un carton à partir d'une liste de 15 numéros
  * Les numéros sont placés automatiquement dans les bonnes colonnes
+ * @param serialNumber Numéro de série optionnel (ex: "30-0054")
  */
-export function createCartonFromNumbers(numbers: number[], position: number): Carton | null {
+export function createCartonFromNumbers(numbers: number[], position: number, serialNumber?: string): Carton | null {
   // Valider qu'on a 15 numéros uniques entre 1 et 90
   if (numbers.length !== 15) return null;
   if (new Set(numbers).size !== 15) return null;
@@ -141,6 +142,7 @@ export function createCartonFromNumbers(numbers: number[], position: number): Ca
     position,
     grid,
     numbers: numbers.sort((a, b) => a - b),
+    serialNumber,
   };
 }
 

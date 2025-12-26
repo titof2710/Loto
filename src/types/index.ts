@@ -19,6 +19,7 @@ export interface Carton {
   position: number;      // Position sur la planche (0-11)
   grid: Cell[][];        // Grille 3x9
   numbers: number[];     // Liste des 15 numéros (pour recherche rapide)
+  serialNumber?: string; // Numéro de série du carton (ex: "30-0054") pour validation téléphonique
 }
 
 /**
@@ -55,6 +56,8 @@ export interface WinEvent {
   type: WinType;
   atBallNumber: number;  // Numéro de la boule qui a déclenché le gain
   timestamp: Date;
+  serialNumber?: string; // Numéro de série du carton gagnant (ex: "30-0054") pour appel téléphonique
+  cartonPosition?: number; // Position du carton sur la planche (1-12)
 }
 
 /**

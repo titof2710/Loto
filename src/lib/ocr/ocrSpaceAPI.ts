@@ -14,6 +14,7 @@ export interface OCRSpaceResult {
   numbers: number[];
   confidence: number;
   rawText: string;
+  serialNumber?: string; // Numéro de série du carton (ex: "30-0054")
 }
 
 // Clé API gratuite personnelle
@@ -82,8 +83,14 @@ export async function extractNumbersWithOCRSpace(
     const rawText = result.ParsedResults?.[0]?.ParsedText || '';
     console.log('OCR.space raw text:', rawText);
 
-    // Extraire les numéros de loto (1-90)
-    const numbers = extractLotoNumbers(rawText);
+    // Extraire le numéro de série (format XX-XXXX comme "30-0054")
+    const serialNumber = extractSerialNumber(rawText);
+    if (serialNumber) {
+      console.log('Numéro de série détecté:', serialNumber);
+    }
+
+    // Extraire les numéros de loto (1-90) en excluant le numéro de série
+    const numbers = extractLotoNumbers(rawText, serialNumber);
 
     onProgress?.(1);
 
@@ -91,6 +98,7 @@ export async function extractNumbersWithOCRSpace(
       numbers: numbers.sort((a, b) => a - b),
       confidence: numbers.length === 15 ? 95 : (numbers.length / 15) * 100,
       rawText,
+      serialNumber,
     };
   } catch (error) {
     console.error('OCR.space error:', error);
@@ -103,20 +111,44 @@ export async function extractNumbersWithOCRSpace(
 }
 
 /**
- * Extrait les numéros de loto (1-90) d'un texte OCR
+ * Extrait le numéro de série du carton (format XX-XXXX comme "30-0054")
  */
-function extractLotoNumbers(text: string): number[] {
-  // Nettoyer le texte
-  const cleaned = text
-    .replace(/[Oo]/g, '0')  // O -> 0
-    .replace(/[Iil|]/g, '1') // I, i, l, | -> 1
-    .replace(/[Ss]/g, '5')   // S -> 5
-    .replace(/[Bb]/g, '8')   // B -> 8
-    .replace(/[Zz]/g, '2')   // Z -> 2
-    .replace(/[\n\r\t]/g, ' ')
-    .replace(/[^\d\s]/g, ' ');
+function extractSerialNumber(text: string): string | undefined {
+  // Chercher un pattern comme "30-0054" ou "30-0552"
+  const serialMatch = text.match(/(\d{2})-?(\d{4})/);
+  if (serialMatch) {
+    return `${serialMatch[1]}-${serialMatch[2]}`;
+  }
+  return undefined;
+}
 
-  // Trouver tous les nombres
+/**
+ * Extrait les numéros de loto (1-90) d'un texte OCR
+ * Filtre le numéro de série et le texte "LOTOQUINE"
+ */
+function extractLotoNumbers(text: string, serialNumber?: string): number[] {
+  // Supprimer le numéro de série du texte pour éviter les faux positifs
+  let cleanedText = text;
+  if (serialNumber) {
+    // Supprimer le numéro de série sous toutes ses formes
+    cleanedText = cleanedText.replace(new RegExp(serialNumber.replace('-', '[-]?'), 'g'), ' ');
+  }
+
+  // Supprimer "LOTOQUINE" et variations
+  cleanedText = cleanedText
+    .replace(/L\s*O\s*T\s*O\s*Q\s*U\s*I\s*N\s*E/gi, ' ')
+    .replace(/LOTOQUINE/gi, ' ')
+    .replace(/LOTOOUINE/gi, ' ')
+    .replace(/I\s*OTOOLINE/gi, ' ')
+    .replace(/I\s*OTOQUINE/gi, ' ');
+
+  // Nettoyer le texte - NE PAS remplacer les lettres par des chiffres
+  // car cela cause des faux positifs (le "O" de LOTOQUINE devient "0")
+  const cleaned = cleanedText
+    .replace(/[\n\r\t]/g, ' ')
+    .replace(/[^\d\s]/g, ' ');  // Garder seulement les chiffres et espaces
+
+  // Trouver tous les nombres (1 ou 2 chiffres)
   const matches = cleaned.match(/\b(\d{1,2})\b/g);
 
   if (!matches) return [];
@@ -125,6 +157,7 @@ function extractLotoNumbers(text: string): number[] {
 
   for (const match of matches) {
     const num = parseInt(match, 10);
+    // Valider que c'est un numéro de loto valide (1-90)
     if (num >= 1 && num <= 90 && !numbers.includes(num)) {
       numbers.push(num);
     }

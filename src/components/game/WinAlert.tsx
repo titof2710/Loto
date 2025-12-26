@@ -54,9 +54,20 @@ export function WinAlert({ win, onDismiss }: WinAlertProps) {
 
         <Trophy className="w-16 h-16 mx-auto mb-4" />
         <h2 className="text-3xl font-bold mb-2">{config.label}</h2>
+        {win.serialNumber && (
+          <div className="bg-white/20 rounded-lg px-4 py-2 mb-3">
+            <p className="text-sm opacity-80">Numéro de série</p>
+            <p className="text-2xl font-bold tracking-wider">{win.serialNumber}</p>
+          </div>
+        )}
         <p className="text-lg opacity-90">
-          Boule n°{win.atBallNumber}
+          {win.cartonPosition && `Carton #${win.cartonPosition} • `}Boule n°{win.atBallNumber}
         </p>
+        {win.serialNumber && (
+          <p className="text-sm mt-3 opacity-75">
+            Communiquez ce numéro pour valider votre gain
+          </p>
+        )}
       </div>
     </div>
   );

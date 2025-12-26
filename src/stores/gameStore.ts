@@ -127,25 +127,29 @@ function detectWins(
     : 0;
   const currentCompletedCount = currentProgress.linesCompleted.filter(Boolean).length;
 
+  // Données communes pour tous les gains
+  const commonData = {
+    cartonId: carton.id,
+    plancheId,
+    atBallNumber: lastBallNumber,
+    timestamp: new Date(),
+    serialNumber: carton.serialNumber, // Numéro de série pour validation téléphonique
+    cartonPosition: carton.position + 1, // Position 1-12 (pas 0-11)
+  };
+
   // Quine
   if (prevCompletedCount < 1 && currentCompletedCount >= 1) {
     wins.push({
-      cartonId: carton.id,
-      plancheId,
+      ...commonData,
       type: 'quine',
-      atBallNumber: lastBallNumber,
-      timestamp: new Date(),
     });
   }
 
   // Double quine
   if (prevCompletedCount < 2 && currentCompletedCount >= 2) {
     wins.push({
-      cartonId: carton.id,
-      plancheId,
+      ...commonData,
       type: 'double_quine',
-      atBallNumber: lastBallNumber,
-      timestamp: new Date(),
     });
   }
 
@@ -153,11 +157,8 @@ function detectWins(
   if (currentProgress.missingForCartonPlein.length === 0 &&
       (previousProgress?.missingForCartonPlein.length ?? carton.numbers.length) > 0) {
     wins.push({
-      cartonId: carton.id,
-      plancheId,
+      ...commonData,
       type: 'carton_plein',
-      atBallNumber: lastBallNumber,
-      timestamp: new Date(),
     });
   }
 

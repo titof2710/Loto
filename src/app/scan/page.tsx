@@ -22,6 +22,7 @@ interface CartonResult {
   imageData: string;
   isEditing: boolean;
   editText: string;
+  serialNumber?: string; // Numéro de série du carton (ex: "30-0054")
 }
 
 export default function ScanPage() {
@@ -125,6 +126,7 @@ export default function ScanPage() {
             imageData: carton.imageData,
             isEditing: false,
             editText: ocrResult.numbers.join(' '),
+            serialNumber: ocrResult.serialNumber,
           });
         } catch (err) {
           console.error(`Erreur OCR carton ${i}:`, err);
@@ -192,7 +194,7 @@ export default function ScanPage() {
 
     for (const result of ocrResults) {
       if (result.numbers.length === 15) {
-        const carton = createCartonFromNumbers(result.numbers, validCartons.length);
+        const carton = createCartonFromNumbers(result.numbers, validCartons.length, result.serialNumber);
         if (carton) {
           validCartons.push(carton);
         }
