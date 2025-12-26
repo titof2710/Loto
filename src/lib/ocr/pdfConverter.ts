@@ -3,14 +3,8 @@
 /**
  * Convertit un fichier PDF en image(s) haute résolution
  * Utilise PDF.js pour le rendu
+ * Note: Import dynamique pour éviter les erreurs SSR (DOMMatrix)
  */
-
-import * as pdfjsLib from 'pdfjs-dist';
-
-// Configurer le worker PDF.js
-if (typeof window !== 'undefined') {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
-}
 
 export interface PDFPageImage {
   pageNumber: number;
@@ -29,6 +23,12 @@ export async function convertPDFToImages(
   file: File,
   scale: number = 2
 ): Promise<PDFPageImage[]> {
+  // Import dynamique pour éviter les erreurs SSR
+  const pdfjsLib = await import('pdfjs-dist');
+
+  // Configurer le worker PDF.js
+  pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+
   // Lire le fichier comme ArrayBuffer
   const arrayBuffer = await file.arrayBuffer();
 
