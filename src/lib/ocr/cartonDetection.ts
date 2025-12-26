@@ -1,6 +1,6 @@
 /**
  * Détection intelligente des cartons de loto sur une image
- * Fonctionne en couleur et en noir & blanc
+ * Basée sur la détection du rectangle de la planche puis découpage en grille
  */
 
 export interface BoundingBox {
@@ -50,244 +50,200 @@ export async function loadImage(source: File | string): Promise<HTMLCanvasElemen
 }
 
 /**
- * Convertit en niveaux de gris
+ * Détecte le rectangle principal de la planche (la zone colorée/blanche)
+ * en cherchant la plus grande zone non-sombre de l'image
  */
-function toGrayscale(imageData: ImageData): Uint8ClampedArray {
-  const gray = new Uint8ClampedArray(imageData.width * imageData.height);
+function detectPlancheBounds(
+  imageData: ImageData,
+  width: number,
+  height: number
+): BoundingBox {
   const data = imageData.data;
 
-  for (let i = 0; i < gray.length; i++) {
-    const idx = i * 4;
-    gray[i] = Math.round(data[idx] * 0.299 + data[idx + 1] * 0.587 + data[idx + 2] * 0.114);
-  }
+  // Trouver les limites de la zone "claire" (la planche)
+  // On cherche les pixels qui ne sont pas trop sombres (pas l'arrière-plan)
+  let minX = width;
+  let maxX = 0;
+  let minY = height;
+  let maxY = 0;
 
-  return gray;
-}
-
-/**
- * Détection de contours avec Sobel
- */
-function sobelEdgeDetection(gray: Uint8ClampedArray, width: number, height: number): Uint8ClampedArray {
-  const edges = new Uint8ClampedArray(width * height);
-
-  // Kernels Sobel
-  const sobelX = [-1, 0, 1, -2, 0, 2, -1, 0, 1];
-  const sobelY = [-1, -2, -1, 0, 0, 0, 1, 2, 1];
-
-  for (let y = 1; y < height - 1; y++) {
-    for (let x = 1; x < width - 1; x++) {
-      let gx = 0;
-      let gy = 0;
-
-      for (let ky = -1; ky <= 1; ky++) {
-        for (let kx = -1; kx <= 1; kx++) {
-          const idx = (y + ky) * width + (x + kx);
-          const kidx = (ky + 1) * 3 + (kx + 1);
-          gx += gray[idx] * sobelX[kidx];
-          gy += gray[idx] * sobelY[kidx];
-        }
-      }
-
-      const magnitude = Math.sqrt(gx * gx + gy * gy);
-      edges[y * width + x] = Math.min(255, magnitude);
-    }
-  }
-
-  return edges;
-}
-
-/**
- * Binarisation avec seuil
- */
-function binarize(data: Uint8ClampedArray, threshold: number): Uint8ClampedArray {
-  const binary = new Uint8ClampedArray(data.length);
-  for (let i = 0; i < data.length; i++) {
-    binary[i] = data[i] > threshold ? 255 : 0;
-  }
-  return binary;
-}
-
-/**
- * Trouve les lignes horizontales fortes (bordures de cartons)
- */
-function findHorizontalLines(
-  binary: Uint8ClampedArray,
-  width: number,
-  height: number,
-  minLength: number
-): number[] {
-  const lines: number[] = [];
-  const minWhitePixels = minLength * 0.6;
+  // Seuil pour considérer un pixel comme "clair" (partie de la planche)
+  const brightnessThreshold = 100;
 
   for (let y = 0; y < height; y++) {
-    let whiteCount = 0;
     for (let x = 0; x < width; x++) {
-      if (binary[y * width + x] > 128) {
-        whiteCount++;
-      }
-    }
+      const idx = (y * width + x) * 4;
+      const r = data[idx];
+      const g = data[idx + 1];
+      const b = data[idx + 2];
 
-    if (whiteCount >= minWhitePixels) {
-      // Éviter les lignes trop proches (au moins 20px d'écart)
-      if (lines.length === 0 || y - lines[lines.length - 1] > 20) {
-        lines.push(y);
+      // Calculer la luminosité
+      const brightness = (r + g + b) / 3;
+
+      // Si le pixel est assez clair, il fait partie de la planche
+      if (brightness > brightnessThreshold) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
       }
     }
   }
 
-  return lines;
+  // Ajouter une petite marge
+  const margin = 5;
+  minX = Math.max(0, minX - margin);
+  minY = Math.max(0, minY - margin);
+  maxX = Math.min(width - 1, maxX + margin);
+  maxY = Math.min(height - 1, maxY + margin);
+
+  return {
+    x: minX,
+    y: minY,
+    width: maxX - minX,
+    height: maxY - minY,
+  };
 }
 
 /**
- * Trouve les lignes verticales fortes
+ * Analyse l'histogramme horizontal pour trouver les lignes de séparation
+ * (les bordures noires entre les cartons)
  */
-function findVerticalLines(
-  binary: Uint8ClampedArray,
-  width: number,
-  height: number,
-  minLength: number
+function findHorizontalSeparators(
+  imageData: ImageData,
+  bounds: BoundingBox,
+  width: number
 ): number[] {
-  const lines: number[] = [];
-  const minWhitePixels = minLength * 0.5;
+  const data = imageData.data;
+  const separators: number[] = [];
 
-  for (let x = 0; x < width; x++) {
-    let whiteCount = 0;
-    for (let y = 0; y < height; y++) {
-      if (binary[y * width + x] > 128) {
-        whiteCount++;
+  // Scanner chaque ligne horizontale dans la zone de la planche
+  const darkThreshold = 80; // Seuil pour considérer un pixel comme "sombre"
+  const minDarkRatio = 0.4; // Au moins 40% de pixels sombres pour être une séparation
+
+  for (let y = bounds.y; y < bounds.y + bounds.height; y++) {
+    let darkCount = 0;
+    let totalCount = 0;
+
+    for (let x = bounds.x; x < bounds.x + bounds.width; x++) {
+      const idx = (y * width + x) * 4;
+      const r = data[idx];
+      const g = data[idx + 1];
+      const b = data[idx + 2];
+      const brightness = (r + g + b) / 3;
+
+      totalCount++;
+      if (brightness < darkThreshold) {
+        darkCount++;
       }
     }
 
-    if (whiteCount >= minWhitePixels) {
-      if (lines.length === 0 || x - lines[lines.length - 1] > 20) {
-        lines.push(x);
-      }
-    }
-  }
-
-  return lines;
-}
-
-/**
- * Filtre les rectangles qui ont le bon ratio pour être des cartons
- * Un carton de loto a un ratio largeur/hauteur d'environ 2.5 à 4
- */
-function filterCartonRectangles(
-  horizontalLines: number[],
-  verticalLines: number[],
-  imageWidth: number,
-  imageHeight: number
-): BoundingBox[] {
-  const rectangles: BoundingBox[] = [];
-
-  // Ratio attendu pour un carton (largeur / hauteur)
-  const minRatio = 1.8;
-  const maxRatio = 4.5;
-
-  // Taille minimale attendue (au moins 5% de l'image)
-  const minWidth = imageWidth * 0.15;
-  const minHeight = imageHeight * 0.05;
-
-  for (let i = 0; i < horizontalLines.length - 1; i++) {
-    for (let j = 0; j < verticalLines.length - 1; j++) {
-      const x = verticalLines[j];
-      const y = horizontalLines[i];
-      const w = verticalLines[j + 1] - x;
-      const h = horizontalLines[i + 1] - y;
-
-      if (w < minWidth || h < minHeight) continue;
-
-      const ratio = w / h;
-      if (ratio >= minRatio && ratio <= maxRatio) {
-        rectangles.push({ x, y, width: w, height: h });
+    const darkRatio = darkCount / totalCount;
+    if (darkRatio > minDarkRatio) {
+      // Éviter les lignes trop proches (fusionner)
+      if (separators.length === 0 || y - separators[separators.length - 1] > 10) {
+        separators.push(y);
       }
     }
   }
 
-  return rectangles;
+  return separators;
 }
 
 /**
- * Groupe les rectangles similaires et supprime les doublons
+ * Analyse l'histogramme vertical pour trouver les colonnes de séparation
  */
-function deduplicateRectangles(rectangles: BoundingBox[], tolerance: number = 30): BoundingBox[] {
-  if (rectangles.length === 0) return [];
+function findVerticalSeparators(
+  imageData: ImageData,
+  bounds: BoundingBox,
+  width: number,
+  height: number
+): number[] {
+  const data = imageData.data;
+  const separators: number[] = [];
 
-  const result: BoundingBox[] = [];
+  const darkThreshold = 80;
+  const minDarkRatio = 0.3;
 
-  for (const rect of rectangles) {
-    let isDuplicate = false;
+  for (let x = bounds.x; x < bounds.x + bounds.width; x++) {
+    let darkCount = 0;
+    let totalCount = 0;
 
-    for (const existing of result) {
-      if (
-        Math.abs(rect.x - existing.x) < tolerance &&
-        Math.abs(rect.y - existing.y) < tolerance &&
-        Math.abs(rect.width - existing.width) < tolerance &&
-        Math.abs(rect.height - existing.height) < tolerance
-      ) {
-        isDuplicate = true;
-        break;
+    for (let y = bounds.y; y < bounds.y + bounds.height; y++) {
+      const idx = (y * width + x) * 4;
+      const r = data[idx];
+      const g = data[idx + 1];
+      const b = data[idx + 2];
+      const brightness = (r + g + b) / 3;
+
+      totalCount++;
+      if (brightness < darkThreshold) {
+        darkCount++;
       }
     }
 
-    if (!isDuplicate) {
-      result.push(rect);
+    const darkRatio = darkCount / totalCount;
+    if (darkRatio > minDarkRatio) {
+      if (separators.length === 0 || x - separators[separators.length - 1] > 10) {
+        separators.push(x);
+      }
     }
   }
 
-  return result;
+  return separators;
 }
 
 /**
- * Trie les cartons par position (haut en bas, gauche à droite)
- * Pour une disposition 2 colonnes x 6 lignes
+ * Regroupe les séparateurs proches et trouve les vraies frontières
  */
-function sortCartonsByPosition(rectangles: BoundingBox[]): BoundingBox[] {
-  return rectangles.sort((a, b) => {
-    // D'abord par ligne (Y), avec une tolérance pour les cartons sur la même ligne
-    const rowTolerance = 50;
-    const rowDiff = Math.floor(a.y / rowTolerance) - Math.floor(b.y / rowTolerance);
+function clusterSeparators(separators: number[], minGap: number): number[] {
+  if (separators.length === 0) return [];
 
-    if (rowDiff !== 0) return rowDiff;
+  const clusters: number[][] = [];
+  let currentCluster: number[] = [separators[0]];
 
-    // Ensuite par colonne (X)
-    return a.x - b.x;
-  });
+  for (let i = 1; i < separators.length; i++) {
+    if (separators[i] - separators[i - 1] < minGap) {
+      currentCluster.push(separators[i]);
+    } else {
+      clusters.push(currentCluster);
+      currentCluster = [separators[i]];
+    }
+  }
+  clusters.push(currentCluster);
+
+  // Retourner le centre de chaque cluster
+  return clusters.map(cluster =>
+    Math.round(cluster.reduce((a, b) => a + b, 0) / cluster.length)
+  );
 }
 
 /**
- * Si la détection automatique échoue, on utilise une grille fixe
- * basée sur le format standard des planches LOTOQUINE
+ * Découpe la planche en grille de 2x6 cartons
  */
-function fallbackGridDetection(
+function splitPlancheIntoGrid(
   canvas: HTMLCanvasElement,
-  headerHeight: number = 0.05 // 5% pour l'en-tête
+  bounds: BoundingBox
 ): BoundingBox[] {
-  const width = canvas.width;
-  const height = canvas.height;
-
-  // Ignorer l'en-tête (environ 5% en haut)
-  const startY = height * headerHeight;
-  const contentHeight = height - startY;
-
-  // 2 colonnes, 6 lignes
   const cols = 2;
   const rows = 6;
 
-  const cellWidth = width / cols;
-  const cellHeight = contentHeight / rows;
+  const cellWidth = bounds.width / cols;
+  const cellHeight = bounds.height / rows;
 
   const rectangles: BoundingBox[] = [];
 
+  // Marge intérieure pour éviter les bordures noires
+  const marginX = cellWidth * 0.02;
+  const marginY = cellHeight * 0.02;
+
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
-      // Ajouter une petite marge pour éviter les bordures
-      const margin = 5;
       rectangles.push({
-        x: col * cellWidth + margin,
-        y: startY + row * cellHeight + margin,
-        width: cellWidth - margin * 2,
-        height: cellHeight - margin * 2,
+        x: bounds.x + col * cellWidth + marginX,
+        y: bounds.y + row * cellHeight + marginY,
+        width: cellWidth - marginX * 2,
+        height: cellHeight - marginY * 2,
       });
     }
   }
@@ -303,25 +259,99 @@ function extractRegion(
   bounds: BoundingBox
 ): HTMLCanvasElement {
   const canvas = document.createElement('canvas');
-  canvas.width = bounds.width;
-  canvas.height = bounds.height;
+  canvas.width = Math.round(bounds.width);
+  canvas.height = Math.round(bounds.height);
 
   const ctx = canvas.getContext('2d');
   if (ctx) {
     ctx.drawImage(
       sourceCanvas,
-      bounds.x,
-      bounds.y,
-      bounds.width,
-      bounds.height,
+      Math.round(bounds.x),
+      Math.round(bounds.y),
+      Math.round(bounds.width),
+      Math.round(bounds.height),
       0,
       0,
-      bounds.width,
-      bounds.height
+      canvas.width,
+      canvas.height
     );
   }
 
   return canvas;
+}
+
+/**
+ * Améliore la détection en utilisant les bordures noires des cartons
+ */
+function refineGridWithBorders(
+  imageData: ImageData,
+  bounds: BoundingBox,
+  width: number,
+  height: number
+): BoundingBox[] {
+  // Trouver les séparateurs horizontaux (lignes noires entre les cartons)
+  const hSeparators = findHorizontalSeparators(imageData, bounds, width);
+  const vSeparators = findVerticalSeparators(imageData, bounds, width, height);
+
+  console.log(`Séparateurs H: ${hSeparators.length}, V: ${vSeparators.length}`);
+
+  // Regrouper les séparateurs proches
+  const hClusters = clusterSeparators(hSeparators, bounds.height * 0.05);
+  const vClusters = clusterSeparators(vSeparators, bounds.width * 0.05);
+
+  console.log(`Clusters H: ${hClusters.length}, V: ${vClusters.length}`);
+
+  // On s'attend à 7 lignes horizontales (haut + 6 séparations) et 3 verticales (gauche + milieu + droite)
+  // Si on n'a pas le bon nombre, on utilise la grille par défaut
+
+  if (hClusters.length >= 5 && vClusters.length >= 2) {
+    // Utiliser les séparateurs détectés
+    const rectangles: BoundingBox[] = [];
+
+    // Trier les clusters
+    hClusters.sort((a, b) => a - b);
+    vClusters.sort((a, b) => a - b);
+
+    // S'assurer qu'on a les bords
+    if (hClusters[0] > bounds.y + 20) {
+      hClusters.unshift(bounds.y);
+    }
+    if (hClusters[hClusters.length - 1] < bounds.y + bounds.height - 20) {
+      hClusters.push(bounds.y + bounds.height);
+    }
+    if (vClusters[0] > bounds.x + 20) {
+      vClusters.unshift(bounds.x);
+    }
+    if (vClusters[vClusters.length - 1] < bounds.x + bounds.width - 20) {
+      vClusters.push(bounds.x + bounds.width);
+    }
+
+    // Créer les rectangles à partir des intersections
+    for (let row = 0; row < Math.min(hClusters.length - 1, 6); row++) {
+      for (let col = 0; col < Math.min(vClusters.length - 1, 2); col++) {
+        const x = vClusters[col];
+        const y = hClusters[row];
+        const w = vClusters[col + 1] - x;
+        const h = hClusters[row + 1] - y;
+
+        // Marge pour éviter les bordures
+        const margin = 3;
+        rectangles.push({
+          x: x + margin,
+          y: y + margin,
+          width: w - margin * 2,
+          height: h - margin * 2,
+        });
+      }
+    }
+
+    if (rectangles.length >= 10) {
+      return rectangles.slice(0, 12);
+    }
+  }
+
+  // Fallback: grille régulière
+  return splitPlancheIntoGrid({ width, height } as HTMLCanvasElement, bounds);
 }
 
 /**
@@ -336,32 +366,33 @@ export async function detectCartons(source: File | string): Promise<DetectedCart
   const width = canvas.width;
   const height = canvas.height;
 
-  // Convertir en niveaux de gris et détecter les contours
-  const gray = toGrayscale(imageData);
-  const edges = sobelEdgeDetection(gray, width, height);
-  const binary = binarize(edges, 50);
+  // 1. Détecter les limites de la planche (ignorer l'arrière-plan sombre)
+  const plancheBounds = detectPlancheBounds(imageData, width, height);
 
-  // Trouver les lignes horizontales et verticales
-  const horizontalLines = findHorizontalLines(binary, width, height, width * 0.3);
-  const verticalLines = findVerticalLines(binary, width, height, height * 0.3);
+  console.log(`Planche détectée: x=${plancheBounds.x}, y=${plancheBounds.y}, w=${plancheBounds.width}, h=${plancheBounds.height}`);
 
-  console.log(`Détecté ${horizontalLines.length} lignes horizontales, ${verticalLines.length} verticales`);
-
-  // Trouver les rectangles de cartons
-  let rectangles = filterCartonRectangles(horizontalLines, verticalLines, width, height);
-  rectangles = deduplicateRectangles(rectangles);
-  rectangles = sortCartonsByPosition(rectangles);
-
-  console.log(`Détecté ${rectangles.length} cartons potentiels`);
-
-  // Si on n'a pas trouvé entre 10 et 14 cartons, utiliser la grille de secours
-  if (rectangles.length < 10 || rectangles.length > 14) {
-    console.log('Utilisation de la détection par grille fixe');
-    rectangles = fallbackGridDetection(canvas);
+  // Vérifier que la planche détectée est raisonnable
+  if (plancheBounds.width < width * 0.3 || plancheBounds.height < height * 0.3) {
+    console.log('Planche trop petite, utilisation de l\'image entière');
+    plancheBounds.x = 0;
+    plancheBounds.y = 0;
+    plancheBounds.width = width;
+    plancheBounds.height = height;
   }
 
-  // Limiter à 12 cartons max
+  // 2. Essayer de détecter les bordures noires des cartons
+  let rectangles = refineGridWithBorders(imageData, plancheBounds, width, height);
+
+  // 3. Si pas assez de rectangles, utiliser la grille par défaut
+  if (rectangles.length < 12) {
+    console.log('Utilisation de la grille par défaut 2x6');
+    rectangles = splitPlancheIntoGrid(canvas, plancheBounds);
+  }
+
+  // Limiter à 12 cartons
   rectangles = rectangles.slice(0, 12);
+
+  console.log(`${rectangles.length} cartons détectés`);
 
   // Extraire chaque carton comme image séparée
   const cartons: DetectedCarton[] = rectangles.map((bounds, index) => {
@@ -374,47 +405,4 @@ export async function detectCartons(source: File | string): Promise<DetectedCart
   });
 
   return cartons;
-}
-
-/**
- * Prétraite l'image d'un carton pour l'OCR
- */
-export function preprocessCartonForOCR(cartonCanvas: HTMLCanvasElement): string {
-  const ctx = cartonCanvas.getContext('2d');
-  if (!ctx) return cartonCanvas.toDataURL('image/png');
-
-  // Upscale x2 pour meilleure reconnaissance
-  const scaledCanvas = document.createElement('canvas');
-  scaledCanvas.width = cartonCanvas.width * 2;
-  scaledCanvas.height = cartonCanvas.height * 2;
-
-  const scaledCtx = scaledCanvas.getContext('2d');
-  if (!scaledCtx) return cartonCanvas.toDataURL('image/png');
-
-  scaledCtx.imageSmoothingEnabled = true;
-  scaledCtx.imageSmoothingQuality = 'high';
-  scaledCtx.drawImage(cartonCanvas, 0, 0, scaledCanvas.width, scaledCanvas.height);
-
-  // Augmenter le contraste
-  const imageData = scaledCtx.getImageData(0, 0, scaledCanvas.width, scaledCanvas.height);
-  const data = imageData.data;
-
-  for (let i = 0; i < data.length; i += 4) {
-    // Convertir en gris
-    const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
-
-    // Augmenter le contraste (factor 1.5)
-    const contrasted = Math.max(0, Math.min(255, (gray - 128) * 1.5 + 128));
-
-    // Binariser (seuil adaptatif)
-    const binary = contrasted > 140 ? 255 : 0;
-
-    data[i] = binary;
-    data[i + 1] = binary;
-    data[i + 2] = binary;
-  }
-
-  scaledCtx.putImageData(imageData, 0, 0);
-
-  return scaledCanvas.toDataURL('image/png');
 }
