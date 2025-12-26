@@ -133,13 +133,22 @@ export async function extractNumbersWithGoogleVision(
 
 /**
  * Extrait le numéro de série du carton (format XX-XXXX comme "30-0054")
+ * Gère les cas où le premier chiffre est mal lu (ex: "0-0035" au lieu de "30-0035")
  */
 function extractSerialNumber(text: string): string | undefined {
-  // Chercher un pattern comme "30-0054" ou "30-0552"
-  const serialMatch = text.match(/(\d{2})-(\d{4})/);
-  if (serialMatch) {
-    return `${serialMatch[1]}-${serialMatch[2]}`;
+  // Chercher un pattern complet comme "30-0054"
+  const fullMatch = text.match(/(\d{2})-(\d{4})/);
+  if (fullMatch) {
+    return `${fullMatch[1]}-${fullMatch[2]}`;
   }
+
+  // Chercher un pattern incomplet comme "0-0035" (premier chiffre manquant)
+  const partialMatch = text.match(/(\d)-(\d{4})/);
+  if (partialMatch) {
+    // Assumer que c'est un numéro de série 30-XXXX
+    return `30-${partialMatch[2]}`;
+  }
+
   return undefined;
 }
 
@@ -197,9 +206,35 @@ function extractLotoNumbers(text: string, serialNumber?: string): number[] {
 
 /**
  * Découpe un groupe de chiffres collés en numéros de loto valides (1-90)
- * Ex: "263744" -> [26, 37, 44], "3642" -> [36, 42], "711" -> [7, 11] ou [71, 1]
+ * Ex: "263744" -> [26, 37, 44], "3642" -> [36, 42], "711" -> [7, 11]
+ * Pour les groupes de 3 chiffres, essaie les deux découpages possibles
  */
 function splitDigitGroup(group: string): number[] {
+  // Cas spécial pour 3 chiffres: essayer les deux découpages
+  if (group.length === 3) {
+    const first = parseInt(group[0], 10);
+    const lastTwo = parseInt(group.substring(1), 10);
+    const firstTwo = parseInt(group.substring(0, 2), 10);
+    const last = parseInt(group[2], 10);
+
+    // Option 1: X + YY (ex: "711" -> 7 + 11)
+    const option1Valid = first >= 1 && first <= 9 && lastTwo >= 10 && lastTwo <= 90;
+    // Option 2: XY + Z (ex: "711" -> 71 + 1)
+    const option2Valid = firstTwo >= 10 && firstTwo <= 90 && last >= 1 && last <= 9;
+
+    // Préférer l'option qui donne 2 numéros valides
+    if (option1Valid && option2Valid) {
+      // Les deux sont valides, préférer X + YY car plus probable
+      return [first, lastTwo];
+    } else if (option1Valid) {
+      return [first, lastTwo];
+    } else if (option2Valid) {
+      return [firstTwo, last];
+    }
+    // Si aucune option n'est valide, utiliser l'algorithme standard
+  }
+
+  // Algorithme standard pour groupes de 4+ chiffres
   const results: number[] = [];
   let i = 0;
 
