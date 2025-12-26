@@ -56,7 +56,7 @@ export default function GamePage() {
   const [isSimulating, setIsSimulating] = useState(false);
   const [simulationSpeed, setSimulationSpeed] = useState<'slow' | 'fast'>('slow');
   const simulationRef = useRef<NodeJS.Timeout | null>(null);
-  const [showYoutube, setShowYoutube] = useState(false);
+  const [showYoutube, setShowYoutube] = useState(true); // Affiché par défaut
   const [youtubeMinimized, setYoutubeMinimized] = useState(false);
 
   // Alertes (sons + vibrations)
