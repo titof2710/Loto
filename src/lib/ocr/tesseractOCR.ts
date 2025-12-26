@@ -1,5 +1,5 @@
 import Tesseract from 'tesseract.js';
-import { preprocessCartonImage, type DetectedCarton } from './imagePreprocessing';
+import type { DetectedCarton } from './imagePreprocessing';
 
 export interface OCRResult {
   numbers: number[];
@@ -24,11 +24,10 @@ export async function extractNumbersFromImage(
   onProgress?: (progress: number) => void
 ): Promise<OCRResult> {
   try {
-    // Prétraiter l'image pour améliorer la reconnaissance
-    const preprocessedImage = typeof imageSource === 'string'
-      ? await preprocessCartonImage(imageSource)
-      : await preprocessCartonImage(imageSource);
+    // Prétraitement léger pour les images déjà propres (PDF)
+    const preprocessedImage = await preprocessForOCR(imageSource);
 
+    // Configuration Tesseract optimisée pour les chiffres
     const result = await Tesseract.recognize(preprocessedImage, 'eng', {
       logger: (m) => {
         if (m.status === 'recognizing text' && onProgress) {
@@ -40,8 +39,12 @@ export async function extractNumbersFromImage(
     const rawText = result.data.text;
     const confidence = result.data.confidence;
 
+    console.log('OCR raw text:', rawText);
+
     // Extraire tous les nombres entre 1 et 90
     const numbers = extractLotoNumbers(rawText);
+
+    console.log('Extracted numbers:', numbers);
 
     return {
       numbers,
@@ -56,6 +59,82 @@ export async function extractNumbersFromImage(
       rawText: '',
     };
   }
+}
+
+/**
+ * Prétraitement simplifié pour l'OCR
+ * Les PDFs sont déjà propres, on évite les traitements agressifs
+ */
+async function preprocessForOCR(source: string | File): Promise<string> {
+  // Charger l'image
+  const canvas = await loadImageToCanvas(source);
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Could not get canvas context');
+
+  // Upscale x2 pour améliorer la reconnaissance
+  const upscaled = document.createElement('canvas');
+  upscaled.width = canvas.width * 2;
+  upscaled.height = canvas.height * 2;
+  const upCtx = upscaled.getContext('2d');
+  if (!upCtx) throw new Error('Could not get upscaled canvas context');
+
+  upCtx.imageSmoothingEnabled = true;
+  upCtx.imageSmoothingQuality = 'high';
+  upCtx.drawImage(canvas, 0, 0, upscaled.width, upscaled.height);
+
+  // Traitement léger: augmenter le contraste sans binariser
+  const imageData = upCtx.getImageData(0, 0, upscaled.width, upscaled.height);
+  const data = imageData.data;
+
+  // Convertir en niveaux de gris et augmenter le contraste
+  for (let i = 0; i < data.length; i += 4) {
+    // Niveaux de gris
+    const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+
+    // Augmenter le contraste (facteur 1.8)
+    const contrasted = Math.max(0, Math.min(255, (gray - 128) * 1.8 + 128));
+
+    data[i] = contrasted;
+    data[i + 1] = contrasted;
+    data[i + 2] = contrasted;
+  }
+
+  upCtx.putImageData(imageData, 0, 0);
+
+  return upscaled.toDataURL('image/png');
+}
+
+/**
+ * Charge une image depuis un fichier ou URL et retourne un canvas
+ */
+async function loadImageToCanvas(source: File | string): Promise<HTMLCanvasElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        reject(new Error('Could not get canvas context'));
+        return;
+      }
+
+      ctx.drawImage(img, 0, 0);
+      resolve(canvas);
+    };
+
+    img.onerror = () => reject(new Error('Failed to load image'));
+
+    if (source instanceof File) {
+      img.src = URL.createObjectURL(source);
+    } else {
+      img.src = source;
+    }
+  });
 }
 
 /**
