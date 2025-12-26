@@ -45,9 +45,16 @@ export function PlancheView({ planche, cartonsProgress }: PlancheViewProps) {
             >
               {/* Indicateurs */}
               <div className="flex items-center justify-between mb-1">
-                <span className="text-xs text-[var(--muted-foreground)]">
-                  #{carton.position + 1}
-                </span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs text-[var(--muted-foreground)]">
+                    #{carton.position + 1}
+                  </span>
+                  {carton.serialNumber && (
+                    <span className="text-xs font-mono font-bold text-[var(--primary)]">
+                      {carton.serialNumber}
+                    </span>
+                  )}
+                </div>
                 <div className="flex items-center gap-1">
                   {completedLines >= 1 && (
                     <Trophy className="w-3 h-3 text-green-500" />
