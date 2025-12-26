@@ -51,6 +51,7 @@ export default function GamePage() {
   const tirageSelector = useTirageSelector();
 
   const [activeWin, setActiveWin] = useState<typeof wins[0] | null>(null);
+  const [activeWinPrize, setActiveWinPrize] = useState<ReturnType<typeof getCurrentPrize>>(null);
   const [viewMode, setViewMode] = useState<'keyboard' | 'cartons'>('keyboard');
   const [lastVoiceNumber, setLastVoiceNumber] = useState<number | null>(null);
   const lastWinsCountRef = useRef(0);
@@ -108,6 +109,10 @@ export default function GamePage() {
     if (wins.length > lastWinsCountRef.current) {
       // Il y a un nouveau gain
       const lastWin = wins[wins.length - 1];
+
+      // IMPORTANT: Capturer le prize AVANT d'avancer au type suivant
+      const prizeAtWin = getCurrentPrize();
+      setActiveWinPrize(prizeAtWin);
       setActiveWin(lastWin);
       alertWin(lastWin.type);
 
@@ -121,7 +126,7 @@ export default function GamePage() {
     } else {
       lastWinsCountRef.current = wins.length;
     }
-  }, [wins, alertWin, advanceToNextType]);
+  }, [wins, alertWin, advanceToNextType, getCurrentPrize]);
 
   // Gérer le clic sur "Cadeau gagné" (quand un autre joueur gagne)
   const handlePrizeWon = useCallback(() => {
@@ -234,7 +239,10 @@ export default function GamePage() {
     <div className="p-4 space-y-4">
       {/* Alerte de gain */}
       {activeWin && (
-        <WinAlert win={activeWin} prize={currentPrize} onDismiss={() => setActiveWin(null)} />
+        <WinAlert win={activeWin} prize={activeWinPrize} onDismiss={() => {
+          setActiveWin(null);
+          setActiveWinPrize(null);
+        }} />
       )}
 
       {/* Modal sélection tirage */}

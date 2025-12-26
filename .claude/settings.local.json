@@ -16,7 +16,9 @@
       "Bash(git add:*)",
       "Bash(git commit -m \"$\\(cat <<''EOF''\nApplication Loto Fiesta complète\n\n- Scan OCR des cartons avec Tesseract.js\n- Saisie manuelle des numéros\n- Clavier numérique 1-90\n- Reconnaissance vocale française\n- Détection quine, double quine, carton plein\n- Alertes \"plus qu 'un numéro\"\n- Sons et vibrations\n- PWA installable\n- Mode sombre automatique\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
       "Bash(git config:*)",
-      "Bash(git commit -m \"$\\(cat <<''EOF''\nApplication Loto Fiesta complète\n\nFonctionnalités:\n- Scan OCR des planches de 12 cartons \\(Tesseract.js\\)\n- Saisie manuelle des numéros\n- Clavier numérique 1-90\n- Reconnaissance vocale française \\(Web Speech API\\)\n- Détection automatique des gains \\(quine, double quine, carton plein\\)\n- Alertes \"Plus qu 'un numéro !\"\n- Sons et vibrations\n- Mode sombre\n- PWA installable\n\nStack: Next.js 16 + React 19 + TypeScript + Tailwind CSS 4 + Zustand\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")"
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nApplication Loto Fiesta complète\n\nFonctionnalités:\n- Scan OCR des planches de 12 cartons \\(Tesseract.js\\)\n- Saisie manuelle des numéros\n- Clavier numérique 1-90\n- Reconnaissance vocale française \\(Web Speech API\\)\n- Détection automatique des gains \\(quine, double quine, carton plein\\)\n- Alertes \"Plus qu 'un numéro !\"\n- Sons et vibrations\n- Mode sombre\n- PWA installable\n\nStack: Next.js 16 + React 19 + TypeScript + Tailwind CSS 4 + Zustand\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git commit:*)",
+      "Bash(git push)"
     ]
   }
 }
