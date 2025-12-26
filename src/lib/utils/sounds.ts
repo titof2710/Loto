@@ -1,7 +1,5 @@
 'use client';
 
-import { Howl } from 'howler';
-
 // Types de sons disponibles
 export type SoundType =
   | 'ball_drawn'
@@ -12,78 +10,108 @@ export type SoundType =
   | 'error'
   | 'success';
 
-// Cache des sons chargés
-const soundCache: Map<SoundType, Howl> = new Map();
+// Cache AudioContext et buffers
+let audioContext: AudioContext | null = null;
 
-// Configuration des sons (utilisant des sons générés en base64 ou URLs)
-const soundConfig: Record<SoundType, { src: string[]; volume: number }> = {
-  ball_drawn: {
-    src: ['/sounds/ball.mp3', '/sounds/ball.ogg'],
-    volume: 0.5,
-  },
-  quine: {
-    src: ['/sounds/quine.mp3', '/sounds/quine.ogg'],
-    volume: 0.8,
-  },
-  double_quine: {
-    src: ['/sounds/double-quine.mp3', '/sounds/double-quine.ogg'],
-    volume: 0.9,
-  },
-  carton_plein: {
-    src: ['/sounds/carton-plein.mp3', '/sounds/carton-plein.ogg'],
-    volume: 1.0,
-  },
-  one_remaining: {
-    src: ['/sounds/alert.mp3', '/sounds/alert.ogg'],
-    volume: 0.7,
-  },
-  error: {
-    src: ['/sounds/error.mp3', '/sounds/error.ogg'],
-    volume: 0.5,
-  },
-  success: {
-    src: ['/sounds/success.mp3', '/sounds/success.ogg'],
-    volume: 0.6,
-  },
-};
-
-// Sons de secours en base64 (bips simples générés)
-const fallbackSounds: Record<SoundType, string> = {
-  ball_drawn: 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdH2Onp+ZkIF0aWVteIOQmJmUjYF2bmtwd4GJj4+LhX53c3N3fYOIiomGgn57eXt+goWHh4WCf3x7fH6AgoSFhIOBf35+f4GCg4OEg4KAf4B/gIGCg4KDgoGAgIB/gIGBgoKCgoGBgICAgICBgYGBgYGBgYGAgICAgICAgYGBgQ==',
-  quine: 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdH2Onp+ZkIF0aWVteIOQmJmUjYF2bmtwd4GJj4+LhX53c3N3fYOIiomGgn57eXt+goWHh4WCf3x7fH6AgoSFhIOBf35+f4GCg4OEg4KAf4B/gIGCg4KDgoGAgIB/gIGBgoKCgoGBgICAgICBgYGBgYGBgYGAgICAgICAgYGBgQ==',
-  double_quine: 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdH2Onp+ZkIF0aWVteIOQmJmUjYF2bmtwd4GJj4+LhX53c3N3fYOIiomGgn57eXt+goWHh4WCf3x7fH6AgoSFhIOBf35+f4GCg4OEg4KAf4B/gIGCg4KDgoGAgIB/gIGBgoKCgoGBgICAgICBgYGBgYGBgYGAgICAgICAgYGBgQ==',
-  carton_plein: 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdH2Onp+ZkIF0aWVteIOQmJmUjYF2bmtwd4GJj4+LhX53c3N3fYOIiomGgn57eXt+goWHh4WCf3x7fH6AgoSFhIOBf35+f4GCg4OEg4KAf4B/gIGCg4KDgoGAgIB/gIGBgoKCgoGBgICAgICBgYGBgYGBgYGAgICAgICAgYGBgQ==',
-  one_remaining: 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdH2Onp+ZkIF0aWVteIOQmJmUjYF2bmtwd4GJj4+LhX53c3N3fYOIiomGgn57eXt+goWHh4WCf3x7fH6AgoSFhIOBf35+f4GCg4OEg4KAf4B/gIGCg4KDgoGAgIB/gIGBgoKCgoGBgICAgICBgYGBgYGBgYGAgICAgICAgYGBgQ==',
-  error: 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdH2Onp+ZkIF0aWVteIOQmJmUjYF2bmtwd4GJj4+LhX53c3N3fYOIiomGgn57eXt+goWHh4WCf3x7fH6AgoSFhIOBf35+f4GCg4OEg4KAf4B/gIGCg4KDgoGAgIB/gIGBgoKCgoGBgICAgICBgYGBgYGBgYGAgICAgICAgYGBgQ==',
-  success: 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdH2Onp+ZkIF0aWVteIOQmJmUjYF2bmtwd4GJj4+LhX53c3N3fYOIiomGgn57eXt+goWHh4WCf3x7fH6AgoSFhIOBf35+f4GCg4OEg4KAf4B/gIGCg4KDgoGAgIB/gIGBgoKCgoGBgICAgICBgYGBgYGBgYGAgICAgICAgYGBgQ==',
-};
-
-/**
- * Obtient ou crée une instance Howl pour un type de son
- */
-function getSound(type: SoundType): Howl {
-  if (soundCache.has(type)) {
-    return soundCache.get(type)!;
+function getAudioContext(): AudioContext {
+  if (!audioContext) {
+    audioContext = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
   }
-
-  const config = soundConfig[type];
-  const sound = new Howl({
-    src: config.src,
-    volume: config.volume,
-    preload: true,
-    onloaderror: () => {
-      // Utiliser le son de secours en base64
-      const fallback = new Howl({
-        src: [fallbackSounds[type]],
-        volume: config.volume,
-      });
-      soundCache.set(type, fallback);
-    },
-  });
-
-  soundCache.set(type, sound);
-  return sound;
+  return audioContext;
 }
+
+// Générateur de sons synthétiques
+function playTone(frequency: number, duration: number, volume: number, type: OscillatorType = 'sine'): void {
+  try {
+    const ctx = getAudioContext();
+    const oscillator = ctx.createOscillator();
+    const gainNode = ctx.createGain();
+
+    oscillator.connect(gainNode);
+    gainNode.connect(ctx.destination);
+
+    oscillator.type = type;
+    oscillator.frequency.setValueAtTime(frequency, ctx.currentTime);
+
+    gainNode.gain.setValueAtTime(volume, ctx.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + duration);
+
+    oscillator.start(ctx.currentTime);
+    oscillator.stop(ctx.currentTime + duration);
+  } catch (e) {
+    console.warn('Audio not available:', e);
+  }
+}
+
+// Sons de victoire (séquences de notes)
+function playWinSequence(notes: Array<{ freq: number; dur: number }>, volume: number): void {
+  try {
+    const ctx = getAudioContext();
+    let time = ctx.currentTime;
+
+    for (const note of notes) {
+      const oscillator = ctx.createOscillator();
+      const gainNode = ctx.createGain();
+
+      oscillator.connect(gainNode);
+      gainNode.connect(ctx.destination);
+
+      oscillator.type = 'square';
+      oscillator.frequency.setValueAtTime(note.freq, time);
+
+      gainNode.gain.setValueAtTime(volume, time);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, time + note.dur * 0.9);
+
+      oscillator.start(time);
+      oscillator.stop(time + note.dur);
+
+      time += note.dur;
+    }
+  } catch (e) {
+    console.warn('Audio not available:', e);
+  }
+}
+
+// Configuration des sons
+const soundEffects: Record<SoundType, () => void> = {
+  ball_drawn: () => playTone(800, 0.1, 0.3, 'sine'),
+
+  quine: () => playWinSequence([
+    { freq: 523, dur: 0.15 },  // C5
+    { freq: 659, dur: 0.15 },  // E5
+    { freq: 784, dur: 0.3 },   // G5
+  ], 0.5),
+
+  double_quine: () => playWinSequence([
+    { freq: 523, dur: 0.12 },  // C5
+    { freq: 659, dur: 0.12 },  // E5
+    { freq: 784, dur: 0.12 },  // G5
+    { freq: 1047, dur: 0.4 },  // C6
+  ], 0.6),
+
+  carton_plein: () => playWinSequence([
+    { freq: 523, dur: 0.1 },   // C5
+    { freq: 659, dur: 0.1 },   // E5
+    { freq: 784, dur: 0.1 },   // G5
+    { freq: 1047, dur: 0.15 }, // C6
+    { freq: 784, dur: 0.1 },   // G5
+    { freq: 1047, dur: 0.15 }, // C6
+    { freq: 1319, dur: 0.4 },  // E6
+  ], 0.7),
+
+  one_remaining: () => playWinSequence([
+    { freq: 880, dur: 0.15 },  // A5
+    { freq: 880, dur: 0.15 },  // A5
+    { freq: 880, dur: 0.15 },  // A5
+  ], 0.5),
+
+  error: () => playTone(200, 0.3, 0.4, 'sawtooth'),
+
+  success: () => playWinSequence([
+    { freq: 660, dur: 0.1 },
+    { freq: 880, dur: 0.2 },
+  ], 0.4),
+};
 
 /**
  * Joue un son
@@ -92,29 +120,31 @@ export function playSound(type: SoundType, enabled: boolean = true): void {
   if (!enabled) return;
 
   try {
-    const sound = getSound(type);
-    sound.play();
+    const effect = soundEffects[type];
+    if (effect) {
+      effect();
+    }
   } catch (error) {
     console.warn(`Could not play sound: ${type}`, error);
   }
 }
 
 /**
- * Précharge tous les sons
+ * Précharge les sons (initialise l'AudioContext)
  */
 export function preloadSounds(): void {
-  Object.keys(soundConfig).forEach((type) => {
-    getSound(type as SoundType);
-  });
+  // L'AudioContext sera initialisé au premier son joué
+  // On ne peut pas le créer sans interaction utilisateur
 }
 
 /**
  * Arrête tous les sons
  */
 export function stopAllSounds(): void {
-  soundCache.forEach((sound) => {
-    sound.stop();
-  });
+  if (audioContext) {
+    audioContext.close();
+    audioContext = null;
+  }
 }
 
 /**
