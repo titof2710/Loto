@@ -170,23 +170,20 @@ function extractLotoNumbers(text: string, serialNumber?: string): number[] {
 
   const numbers: number[] = [];
 
-  // D'abord extraire les nombres isolés (1-2 chiffres avec espaces autour)
-  const simpleMatches = cleaned.match(/(?:^|\s)(\d{1,2})(?:\s|$)/g);
-  if (simpleMatches) {
-    for (const match of simpleMatches) {
-      const num = parseInt(match.trim(), 10);
+  // Trouver tous les groupes de chiffres
+  const allMatches = cleaned.match(/\d+/g);
+  if (!allMatches) return [];
+
+  for (const match of allMatches) {
+    if (match.length <= 2) {
+      // Nombre simple (1-2 chiffres)
+      const num = parseInt(match, 10);
       if (num >= 1 && num <= 90 && !numbers.includes(num)) {
         numbers.push(num);
       }
-    }
-  }
-
-  // Ensuite traiter les groupes de chiffres collés (3+ chiffres)
-  const groupMatches = cleaned.match(/\d{3,}/g);
-  if (groupMatches) {
-    for (const group of groupMatches) {
-      // Essayer de découper intelligemment
-      const extracted = splitDigitGroup(group);
+    } else {
+      // Groupe de chiffres collés (3+ chiffres) - découper intelligemment
+      const extracted = splitDigitGroup(match);
       for (const num of extracted) {
         if (num >= 1 && num <= 90 && !numbers.includes(num)) {
           numbers.push(num);
