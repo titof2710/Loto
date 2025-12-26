@@ -304,9 +304,26 @@ function extractNumbersWithPositions(
     const nums = extractNumbersFromText(text);
 
     for (const num of nums) {
-      if (num >= 1 && num <= 90 && !seenNumbers.has(num)) {
-        seenNumbers.add(num);
-        numbersWithY.push({ number: num, yCenter, xCenter });
+      if (num >= 1 && num <= 90) {
+        // Si on a déjà vu ce numéro, garder celui avec le Y le plus cohérent
+        // (généralement le premier avec un Y qui tombe bien dans une ligne)
+        const existingIndex = numbersWithY.findIndex(n => n.number === num);
+        if (existingIndex === -1) {
+          seenNumbers.add(num);
+          numbersWithY.push({ number: num, yCenter, xCenter });
+        } else {
+          // Si le nouveau Y est plus "typique" (plus proche des autres numéros), le remplacer
+          // On préfère les Y qui sont proches de 160, 310, ou 470 (centres de lignes typiques)
+          const existing = numbersWithY[existingIndex];
+          const typicalYs = [160, 310, 470];
+          const distExisting = Math.min(...typicalYs.map(ty => Math.abs(existing.yCenter - ty)));
+          const distNew = Math.min(...typicalYs.map(ty => Math.abs(yCenter - ty)));
+
+          if (distNew < distExisting) {
+            console.log(`Replacing duplicate ${num}: Y=${Math.round(existing.yCenter)} -> Y=${Math.round(yCenter)}`);
+            numbersWithY[existingIndex] = { number: num, yCenter, xCenter };
+          }
+        }
       }
     }
   }
