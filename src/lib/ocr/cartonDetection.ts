@@ -617,25 +617,31 @@ export async function detectCartons(source: File | string): Promise<DetectedCart
     const y = topY + row * cartonHeight;
     const h = cartonHeight;
 
-    // Marges minimales - juste assez pour éviter les bordures épaisses
-    // Les numéros sont sur toute la largeur du carton, ne pas les couper !
-    const marginY = h * 0.05; // 5% de marge verticale seulement
+    // Marges pour capturer le numéro de série qui est AU-DESSUS de la bordure du carton
+    // marginTop: négatif pour remonter et capturer le numéro de série
+    // marginBottom: petite marge pour éviter la bordure du carton suivant
+    const marginTop = row === 0 ? -h * 0.15 : -h * 0.08; // Plus de marge pour la première ligne
+    const marginBottom = h * 0.02;
     const marginXInner = 5; // Juste 5 pixels de marge horizontale
+
+    // S'assurer qu'on ne dépasse pas le haut de l'image
+    const actualY = Math.max(0, y + marginTop);
+    const actualHeight = h - marginTop - marginBottom;
 
     // Colonne gauche
     rectangles.push({
       x: leftColStart + marginXInner,
-      y: y + marginY,
+      y: actualY,
       width: leftColEnd - leftColStart - marginXInner * 2,
-      height: h - marginY * 2,
+      height: actualHeight,
     });
 
     // Colonne droite
     rectangles.push({
       x: rightColStart + marginXInner,
-      y: y + marginY,
+      y: actualY,
       width: rightColEnd - rightColStart - marginXInner * 2,
-      height: h - marginY * 2,
+      height: actualHeight,
     });
   }
 
