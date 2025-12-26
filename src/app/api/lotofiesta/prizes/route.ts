@@ -326,6 +326,8 @@ function parsePrizesFlexible(text: string): LotoPrize[] {
     const startIdx = firstMatch.index + firstMatch.fullMatch.length;
 
     // Chercher le prochain lot (peu importe lequel, on cherche le pattern général)
+    // IMPORTANT: On coupe dès qu'on trouve un pattern "N Q/DQ/CP" même si le type
+    // ne correspond pas au numéro, car l'OCR peut mélanger les colonnes
     let endIdx = normalized.length;
     const nextLotPattern = /\s(\d{1,2})\s+(Q|DQ|CP)\s/gi;
     nextLotPattern.lastIndex = startIdx;
@@ -333,11 +335,10 @@ function parsePrizesFlexible(text: string): LotoPrize[] {
     let nextMatch;
     while ((nextMatch = nextLotPattern.exec(normalized)) !== null) {
       const nextNum = parseInt(nextMatch[1], 10);
-      const nextType = nextMatch[2].toUpperCase() as PrizeType;
-      const nextExpectedType = getExpectedType(nextNum);
 
-      // Vérifier que c'est un vrai marqueur de lot (type correct pour ce numéro)
-      if (nextNum >= 1 && nextNum <= 24 && nextType === nextExpectedType && nextNum !== lotNum) {
+      // Couper dès qu'on trouve un autre numéro suivi de Q/DQ/CP
+      // (peu importe si le type correspond ou non)
+      if (nextNum >= 1 && nextNum <= 24 && nextNum !== lotNum) {
         endIdx = nextMatch.index;
         break;
       }
