@@ -160,7 +160,7 @@ export default function ScanPage() {
       prev.map((r, i) => ({
         ...r,
         isEditing: i === index,
-        editText: r.numbers.join(' '),
+        editText: '', // Vider le champ pour ne saisir que les numéros manquants
       }))
     );
   };
@@ -168,17 +168,22 @@ export default function ScanPage() {
   // Sauvegarder l'édition d'un carton
   const handleSaveCartonEdit = (index: number) => {
     const result = ocrResults[index];
-    const numbers = parseNumbers(result.editText);
-    const validation = validateCartonNumbers(numbers);
+    const newNumbers = parseNumbers(result.editText);
+
+    // Fusionner les numéros existants avec les nouveaux (sans doublons)
+    const allNumbers = [...new Set([...result.numbers, ...newNumbers])];
+    const validation = validateCartonNumbers(allNumbers);
 
     setOcrResults((prev) =>
       prev.map((r, i) =>
         i === index
           ? {
               ...r,
-              numbers,
+              numbers: allNumbers,
+              numbersWithPositions: [], // Reset les positions car on a modifié manuellement
               isValid: validation.valid,
               isEditing: false,
+              editText: '',
             }
           : r
       )
@@ -641,14 +646,49 @@ export default function ScanPage() {
               </div>
 
               {selectedResult.isEditing ? (
-                <div className="space-y-2">
-                  <textarea
-                    value={selectedResult.editText}
-                    onChange={(e) => handleEditTextChange(selectedCartonIndex, e.target.value)}
-                    className="w-full px-3 py-2 rounded border border-[var(--border)] bg-[var(--card)] font-mono text-sm"
-                    rows={2}
-                    placeholder="Entrez les 15 numéros séparés par des espaces"
-                  />
+                <div className="space-y-3">
+                  {/* Numéros déjà détectés */}
+                  {selectedResult.numbers.length > 0 && (
+                    <div>
+                      <div className="text-sm text-[var(--muted-foreground)] mb-1">
+                        {selectedResult.numbers.length} numéro{selectedResult.numbers.length > 1 ? 's' : ''} détecté{selectedResult.numbers.length > 1 ? 's' : ''} :
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {selectedResult.numbers.map((num) => (
+                          <span
+                            key={num}
+                            className="px-2 py-0.5 bg-green-500 text-white rounded text-sm font-bold"
+                          >
+                            {num}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Champ pour les numéros manquants */}
+                  <div>
+                    <label className="text-sm font-medium block mb-1">
+                      {selectedResult.numbers.length > 0
+                        ? `Ajoutez les ${15 - selectedResult.numbers.length} numéro${15 - selectedResult.numbers.length > 1 ? 's' : ''} manquant${15 - selectedResult.numbers.length > 1 ? 's' : ''} :`
+                        : 'Entrez les 15 numéros :'}
+                    </label>
+                    <input
+                      type="text"
+                      value={selectedResult.editText}
+                      onChange={(e) => handleEditTextChange(selectedCartonIndex, e.target.value)}
+                      className="w-full px-3 py-2 rounded border border-[var(--border)] bg-[var(--card)] font-mono text-sm"
+                      placeholder={selectedResult.numbers.length > 0
+                        ? `Ex: ${[...Array(15 - selectedResult.numbers.length)].map(() => Math.floor(Math.random() * 90) + 1).join(' ')}`
+                        : 'Ex: 3 12 24 35 48 7 19 29 42 56 61 73 85 68 90'}
+                    />
+                    {selectedResult.editText && (
+                      <div className="text-xs text-[var(--muted-foreground)] mt-1">
+                        {parseNumbers(selectedResult.editText).length} numéro{parseNumbers(selectedResult.editText).length > 1 ? 's' : ''} à ajouter
+                      </div>
+                    )}
+                  </div>
+
                   <div className="flex gap-2">
                     <button
                       onClick={() => handleSaveCartonEdit(selectedCartonIndex)}
@@ -658,7 +698,7 @@ export default function ScanPage() {
                     </button>
                     <button
                       onClick={() => setOcrResults((prev) =>
-                        prev.map((r, i) => (i === selectedCartonIndex ? { ...r, isEditing: false } : r))
+                        prev.map((r, i) => (i === selectedCartonIndex ? { ...r, isEditing: false, editText: '' } : r))
                       )}
                       className="px-4 py-2 bg-[var(--muted)] rounded-lg text-sm"
                     >
