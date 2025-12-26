@@ -3,6 +3,7 @@ import type { Session } from '@/types/auth';
 
 const getSecret = () => {
   const secret = process.env.JWT_SECRET;
+  console.log('JWT_SECRET exists:', !!secret, 'length:', secret?.length || 0);
   if (!secret) {
     throw new Error('JWT_SECRET environment variable is not set');
   }

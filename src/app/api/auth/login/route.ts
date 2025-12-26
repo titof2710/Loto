@@ -55,8 +55,9 @@ export async function POST(request: Request) {
     return NextResponse.json<AuthResponse>({ success: true, userId });
   } catch (error) {
     console.error('Erreur connexion:', error);
+    console.error('Stack:', error instanceof Error ? error.stack : 'N/A');
     return NextResponse.json<AuthResponse>(
-      { success: false, error: 'Erreur serveur' },
+      { success: false, error: `Erreur serveur: ${error instanceof Error ? error.message : 'Unknown'}` },
       { status: 500 }
     );
   }
