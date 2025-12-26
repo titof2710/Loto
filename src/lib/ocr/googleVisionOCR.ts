@@ -194,20 +194,37 @@ function extractNumbersWithPositions(
       if (text.match(/^\d{1,2}-\d{4}$/) || text.match(/^\d-\d{4}$/)) {
         continue;
       }
-      // Ignorer les chiffres qui font partie du préfixe du numéro de série (ex: "24" de "24-0544")
-      const serialPrefix = serialInfo.serialNumber.split('-')[0]; // "24"
+      // Pour le préfixe et suffixe, vérifier la position Y avant d'ignorer
+      // car "30" peut être un vrai numéro de loto même si le numéro de série est "30-XXXX"
+      const serialPrefix = serialInfo.serialNumber.split('-')[0]; // "24" ou "30"
       const serialSuffix = serialInfo.serialNumber.split('-')[1]; // "0544"
-      if (text === serialPrefix || text === serialSuffix) {
+
+      // Le suffixe (ex: "0544") n'est jamais un numéro de loto valide, on peut l'ignorer
+      if (text === serialSuffix) {
         continue;
       }
-      // Ignorer aussi si le texte est juste le premier ou dernier chiffre du préfixe
-      if (serialPrefix && (text === serialPrefix[0] || text === serialPrefix[1])) {
-        // Vérifier si c'est vraiment un numéro de série isolé (position Y très haute)
+
+      // Pour le préfixe, vérifier la position Y - si c'est en haut de l'image, c'est le numéro de série
+      if (text === serialPrefix) {
         const vertices = annotation.boundingPoly?.vertices || [];
         if (vertices.length >= 4) {
           const yValues = vertices.map(v => v.y || 0).filter(y => y > 0);
           const yCenter = yValues.length > 0 ? yValues.reduce((a, b) => a + b, 0) / yValues.length : 0;
-          // Si le numéro est dans les 15% supérieurs de l'image, c'est probablement le numéro de série
+          // Si le numéro est dans les 15% supérieurs de l'image (Y < 60), c'est le numéro de série
+          if (yCenter < 60) {
+            console.log(`Ignoring "${text}" at Y=${yCenter} - serial number prefix`);
+            continue;
+          }
+          // Sinon, c'est probablement un vrai numéro de loto (ex: "30" dans la grille)
+        }
+      }
+
+      // Ignorer les chiffres isolés du préfixe seulement s'ils sont en haut de l'image
+      if (serialPrefix && (text === serialPrefix[0] || text === serialPrefix[1])) {
+        const vertices = annotation.boundingPoly?.vertices || [];
+        if (vertices.length >= 4) {
+          const yValues = vertices.map(v => v.y || 0).filter(y => y > 0);
+          const yCenter = yValues.length > 0 ? yValues.reduce((a, b) => a + b, 0) / yValues.length : 0;
           if (yCenter < 60) {
             console.log(`Ignoring "${text}" at Y=${yCenter} - likely part of serial number`);
             continue;
