@@ -107,35 +107,39 @@ export async function POST(request: NextRequest) {
  * L'image est généralement dans le carousel/gallery avec un nom comme "liste-lots" ou "lots"
  */
 function findPrizesImageUrl(html: string): string | null {
-  // Chercher les images dans la galerie produit
-  // Pattern pour les images contenant "lots" ou "liste" dans le nom
-  const patterns = [
-    // Images avec "lots" dans le nom
-    /<img[^>]*src="([^"]*(?:lots|liste|lot)[^"]*\.(?:jpg|jpeg|png|webp))"[^>]*>/gi,
-    // Images dans la galerie WooCommerce
-    /<div[^>]*class="[^"]*woocommerce-product-gallery[^"]*"[^>]*>[\s\S]*?<img[^>]*src="([^"]+)"[^>]*>/gi,
-    // Images data-large_image (haute résolution)
-    /data-large_image="([^"]*(?:lots|liste)[^"]*)"/gi,
-    // Toutes les images de la galerie
-    /<a[^>]*href="([^"]*(?:lots|liste|Lots|Liste)[^"]*\.(?:jpg|jpeg|png|webp))"[^>]*>/gi,
+  // D'abord chercher les images avec "lots" ou "liste" dans le nom (data-large_image)
+  const lotsPatterns = [
+    /data-large_image="([^"]*(?:lots|liste|Lots|Liste)[^"]*)"/gi,
+    /data-src="([^"]*(?:lots|liste|Lots|Liste)[^"]*)"/gi,
+    /href="([^"]*(?:lots|liste|Lots|Liste)[^"]*\.(?:jpg|jpeg|png|webp)[^"]*)"/gi,
+    /src="([^"]*(?:lots|liste|Lots|Liste)[^"]*\.(?:jpg|jpeg|png|webp)[^"]*)"/gi,
   ];
 
-  for (const pattern of patterns) {
-    const matches = html.matchAll(pattern);
+  for (const pattern of lotsPatterns) {
+    const matches = [...html.matchAll(pattern)];
     for (const match of matches) {
       if (match[1]) {
+        console.log('Image lots trouvée avec pattern lots/liste:', match[1]);
         return match[1];
       }
     }
   }
 
-  // Fallback: chercher n'importe quelle grande image dans la page
+  // Fallback: chercher toutes les grandes images dans la galerie
   const allImagesPattern = /data-large_image="([^"]+)"/gi;
   const allMatches = [...html.matchAll(allImagesPattern)];
+
+  console.log('Nombre d\'images trouvées dans galerie:', allMatches.length);
+  allMatches.forEach((m, i) => console.log(`Image ${i}:`, m[1]?.substring(0, 80)));
 
   // Prendre la 2ème image si elle existe (la 1ère est souvent l'affiche principale)
   if (allMatches.length > 1 && allMatches[1][1]) {
     return allMatches[1][1];
+  }
+
+  // Sinon prendre la première
+  if (allMatches.length > 0 && allMatches[0][1]) {
+    return allMatches[0][1];
   }
 
   return null;
@@ -147,6 +151,10 @@ function findPrizesImageUrl(html: string): string | null {
  * Ex: "1 Q 1 Tablette SAMSUNG Galaxy A+"
  */
 function parsePrizesFromOCRText(text: string): LotoPrize[] {
+  console.log('=== Parsing OCR text ===');
+  console.log('Text length:', text.length);
+  console.log('First 1000 chars:', text.substring(0, 1000));
+
   const prizes: LotoPrize[] = [];
   const lines = text.split('\n');
 
@@ -180,9 +188,13 @@ function parsePrizesFromOCRText(text: string): LotoPrize[] {
     }
   }
 
+  console.log('Prizes found with line-by-line:', prizes.length);
+
   // Si le parsing ligne par ligne n'a pas fonctionné, essayer un parsing plus flexible
   if (prizes.length === 0) {
-    return parsePrizesFlexible(text);
+    const flexPrizes = parsePrizesFlexible(text);
+    console.log('Prizes found with flexible parsing:', flexPrizes.length);
+    return flexPrizes;
   }
 
   return prizes.sort((a, b) => a.number - b.number);
@@ -195,33 +207,50 @@ function parsePrizesFromOCRText(text: string): LotoPrize[] {
 function parsePrizesFlexible(text: string): LotoPrize[] {
   const prizes: LotoPrize[] = [];
 
-  // Normaliser le texte
+  // Normaliser le texte - remplacer les retours à la ligne par des espaces pour les multi-lignes
   const normalized = text
-    .replace(/\r\n/g, '\n')
-    .replace(/\n+/g, '\n');
+    .replace(/\r\n/g, ' ')
+    .replace(/\n/g, ' ')
+    .replace(/\s+/g, ' ');
 
-  // Regex plus flexible: chercher N TYPE description
-  // Le numéro peut être collé au type (ex: "1Q" ou "1 Q")
-  const flexRegex = /(\d{1,2})\s*(Q|DQ|CP)\s+(?:\d+\s+)?([A-ZÀÂÄÉÈÊËÏÎÔÙÛÇ][^\n\d]{3,})/gim;
+  console.log('Normalized text (first 500):', normalized.substring(0, 500));
 
-  let match;
-  while ((match = flexRegex.exec(normalized)) !== null) {
-    const number = parseInt(match[1], 10);
-    const type = match[2].toUpperCase() as PrizeType;
-    let description = match[3].trim();
+  // Patterns à essayer dans l'ordre
+  const patterns = [
+    // Format: N Q/DQ/CP quantité description (ex: "1 Q 1 Tablette SAMSUNG")
+    /(\d{1,2})\s*(Q|DQ|CP)\s+\d+\s+([A-ZÀÂÄÉÈÊËÏÎÔÙÛÜÇ][^0-9]{2,}?)(?=\s*\d{1,2}\s*(?:Q|DQ|CP)|$)/gi,
+    // Format: N Q/DQ/CP description (sans quantité)
+    /(\d{1,2})\s*(Q|DQ|CP)\s+([A-ZÀÂÄÉÈÊËÏÎÔÙÛÜÇ][^0-9]{2,}?)(?=\s*\d{1,2}\s*(?:Q|DQ|CP)|$)/gi,
+    // Format plus simple
+    /(\d{1,2})\s*(Q|DQ|CP)\s+(.{3,}?)(?=\s*\d{1,2}\s*(?:Q|DQ|CP)|$)/gi,
+  ];
 
-    // Nettoyer la description
-    description = description
-      .replace(/[|\\]/g, '')
-      .replace(/\s+/g, ' ')
-      .replace(/\s*\d{1,2}\s*(Q|DQ|CP)\s*$/i, '') // Enlever le début du lot suivant
-      .trim();
+  for (const regex of patterns) {
+    let match;
+    while ((match = regex.exec(normalized)) !== null) {
+      const number = parseInt(match[1], 10);
+      const type = match[2].toUpperCase() as PrizeType;
+      let description = match[3].trim();
 
-    if (description.length > 2 && number >= 1 && number <= 50) {
-      // Vérifier qu'on n'a pas déjà ce numéro
-      if (!prizes.some(p => p.number === number && p.type === type)) {
-        prizes.push({ number, type, description });
+      // Nettoyer la description
+      description = description
+        .replace(/[|\\]/g, '')
+        .replace(/\s+/g, ' ')
+        .replace(/\s*\d{1,2}\s*(Q|DQ|CP)\s*$/i, '')
+        .trim();
+
+      if (description.length > 2 && number >= 1 && number <= 50) {
+        // Vérifier qu'on n'a pas déjà ce numéro+type
+        if (!prizes.some(p => p.number === number && p.type === type)) {
+          console.log(`Found prize: ${number} ${type} - ${description.substring(0, 50)}`);
+          prizes.push({ number, type, description });
+        }
       }
+    }
+
+    // Si on a trouvé des lots, sortir de la boucle
+    if (prizes.length > 0) {
+      break;
     }
   }
 
