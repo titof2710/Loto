@@ -5,24 +5,35 @@ import type { Planche, Carton, DrawnBall, WinEvent, CartonProgress, WinType, Cel
 // Fonctions de persistance avec Vercel KV
 async function savePlanchesToKV(planches: Planche[]) {
   try {
-    await fetch('/api/planches', {
+    console.log('💾 Sauvegarde planches vers KV:', planches.length, 'planches');
+    const response = await fetch('/api/planches', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(planches),
     });
+    if (!response.ok) {
+      console.error('❌ Erreur HTTP sauvegarde KV:', response.status, response.statusText);
+    } else {
+      console.log('✅ Planches sauvegardées avec succès');
+    }
   } catch (error) {
-    console.error('Erreur sauvegarde KV:', error);
+    console.error('❌ Erreur sauvegarde KV:', error);
   }
 }
 
 async function loadPlanchesFromKV(): Promise<Planche[]> {
   try {
+    console.log('📥 Chargement planches depuis KV...');
     const response = await fetch('/api/planches');
     if (response.ok) {
-      return await response.json();
+      const planches = await response.json();
+      console.log('✅ Planches chargées:', planches.length, 'planches');
+      return planches;
+    } else {
+      console.error('❌ Erreur HTTP chargement KV:', response.status, response.statusText);
     }
   } catch (error) {
-    console.error('Erreur chargement KV:', error);
+    console.error('❌ Erreur chargement KV:', error);
   }
   return [];
 }
