@@ -64,27 +64,35 @@ async function extractNumbersFromCartonGrid(source: string | File): Promise<numb
   const worker = await Tesseract.createWorker('eng', 1);
   await worker.setParameters({
     tessedit_char_whitelist: '0123456789',
-    tessedit_pageseg_mode: Tesseract.PSM.SINGLE_CHAR,
+    tessedit_pageseg_mode: Tesseract.PSM.SINGLE_WORD, // SINGLE_WORD pour lire 1-2 chiffres
   });
 
   // Parcourir chaque cellule
   for (let row = 0; row < 3; row++) {
     for (let col = 0; col < 9; col++) {
+      // Extraire la cellule avec une marge pour éviter les bordures
+      const marginX = cellWidth * 0.1;
+      const marginY = cellHeight * 0.1;
+
       const cellCanvas = document.createElement('canvas');
-      cellCanvas.width = Math.floor(cellWidth);
-      cellCanvas.height = Math.floor(cellHeight);
+      // Taille plus grande pour meilleure OCR
+      cellCanvas.width = Math.floor(cellWidth * 2);
+      cellCanvas.height = Math.floor(cellHeight * 2);
 
       const cellCtx = cellCanvas.getContext('2d');
       if (!cellCtx) continue;
 
-      // Extraire la cellule avec une petite marge
-      const margin = 5;
+      // Fond blanc
+      cellCtx.fillStyle = 'white';
+      cellCtx.fillRect(0, 0, cellCanvas.width, cellCanvas.height);
+
+      // Extraire et agrandir la cellule
       cellCtx.drawImage(
         canvas,
-        col * cellWidth + margin,
-        row * cellHeight + margin,
-        cellWidth - margin * 2,
-        cellHeight - margin * 2,
+        col * cellWidth + marginX,
+        row * cellHeight + marginY,
+        cellWidth - marginX * 2,
+        cellHeight - marginY * 2,
         0,
         0,
         cellCanvas.width,
@@ -98,7 +106,9 @@ async function extractNumbersFromCartonGrid(source: string | File): Promise<numb
       if (hasContent) {
         // OCR sur cette cellule
         const result = await worker.recognize(cellCanvas.toDataURL('image/png'));
-        const text = result.data.text.trim();
+        const text = result.data.text.trim().replace(/\s/g, '');
+
+        console.log(`Cell [${row},${col}]: "${text}"`);
 
         // Parser le numéro (1 ou 2 chiffres)
         const num = parseInt(text, 10);
