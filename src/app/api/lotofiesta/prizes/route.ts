@@ -1,8 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { Redis } from '@upstash/redis';
 import type { LotoPrize, PrizeType } from '@/types';
 
 // Clé API Google Cloud Vision
 const GOOGLE_API_KEY = process.env.GOOGLE_VISION_API_KEY || 'AIzaSyBOL0Fw0Y0vzKTdmCAsX7hfaV_Uufufuy0';
+
+// Connexion Redis pour le cache
+const redis = Redis.fromEnv();
+const TIRAGES_KEY = 'loto:tirages';
+const CACHE_TTL = 24 * 60 * 60; // 24 heures
+
+interface CachedTirage {
+  id: string;
+  prizes: LotoPrize[];
+  prizesImageUrl?: string;
+  cachedAt: string;
+}
+
+/**
+ * Génère un ID unique pour un tirage basé sur son URL
+ */
+function getTirageIdFromUrl(url: string): string {
+  // Extraire le slug du produit de l'URL (ex: /produit/as-muret-football -> as-muret-football)
+  const match = url.match(/\/produit\/([^\/\?]+)/);
+  return match ? match[1] : url.replace(/[^a-z0-9]/gi, '-');
+}
 
 /**
  * POST /api/lotofiesta/prizes
@@ -18,6 +40,25 @@ export async function POST(request: NextRequest) {
         { error: 'tirageUrl requis' },
         { status: 400 }
       );
+    }
+
+    const tirageId = getTirageIdFromUrl(tirageUrl);
+
+    // 0. Vérifier le cache Upstash Redis avant d'appeler Google Vision
+    try {
+      const cachedData = await redis.get<Record<string, CachedTirage>>(TIRAGES_KEY);
+      if (cachedData && cachedData[tirageId] && cachedData[tirageId].prizes.length > 0) {
+        console.log(`✅ CACHE HIT pour tirage ${tirageId}: ${cachedData[tirageId].prizes.length} lots (économie API Google Vision)`);
+        return NextResponse.json({
+          prizes: cachedData[tirageId].prizes,
+          prizesImageUrl: cachedData[tirageId].prizesImageUrl,
+          fromCache: true,
+          cachedAt: cachedData[tirageId].cachedAt
+        });
+      }
+      console.log(`❌ CACHE MISS pour tirage ${tirageId}, appel Google Vision OCR...`);
+    } catch (cacheError) {
+      console.error('Erreur lecture cache (continue avec OCR):', cacheError);
     }
 
     // 1. Fetch la page du tirage pour trouver l'image des lots
@@ -92,7 +133,24 @@ export async function POST(request: NextRequest) {
 
     const prizes = parsePrizesFromOCRText(rawText);
 
-    return NextResponse.json({ prizes, prizesImageUrl, rawText });
+    // 6. Sauvegarder dans le cache Upstash pour éviter de rappeler Google Vision
+    if (prizes.length > 0) {
+      try {
+        const existingData = await redis.get<Record<string, CachedTirage>>(TIRAGES_KEY) || {};
+        existingData[tirageId] = {
+          id: tirageId,
+          prizes,
+          prizesImageUrl,
+          cachedAt: new Date().toISOString(),
+        };
+        await redis.set(TIRAGES_KEY, existingData, { ex: CACHE_TTL });
+        console.log(`✅ CACHE SAVE pour tirage ${tirageId}: ${prizes.length} lots sauvegardés`);
+      } catch (cacheError) {
+        console.error('Erreur sauvegarde cache:', cacheError);
+      }
+    }
+
+    return NextResponse.json({ prizes, prizesImageUrl, rawText, fromCache: false });
   } catch (error) {
     console.error('Erreur extraction lots:', error);
     return NextResponse.json(

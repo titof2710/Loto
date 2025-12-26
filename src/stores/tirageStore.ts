@@ -1,5 +1,4 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
 import type { LotoTirage, LotoPrize, PrizeType } from '@/types';
 
 interface TirageStore {
@@ -20,6 +19,7 @@ interface TirageStore {
   nextGroup: () => void;               // Passe au groupe suivant (bouton "Cadeau gagné" sur CP)
   resetToFirstGroup: () => void;
   getCurrentPrize: () => LotoPrize | null;
+  getCurrentPrizeNumber: () => number; // Numéro du lot attendu (même si non trouvé)
   getNextPrize: () => LotoPrize | null;
   isLastTypeInGroup: () => boolean;
 }
@@ -170,6 +170,13 @@ export const useTirageStore = create<TirageStore>()(
         });
       },
 
+      // Obtenir le numéro du lot attendu (même si le lot n'existe pas)
+      getCurrentPrizeNumber: (): number => {
+        const state = get();
+        const offset = typeToOffset[state.currentTypeInGroup];
+        return state.currentGroupIndex + offset + 1; // +1 car les lots commencent à 1
+      },
+
       // Obtenir le cadeau actuel
       // Les lots sont numérotés 1, 2, 3... où chaque groupe de 3 est Q, DQ, CP
       // Donc lot #1 = Q du groupe 1, lot #2 = DQ du groupe 1, lot #3 = CP du groupe 1
@@ -180,11 +187,7 @@ export const useTirageStore = create<TirageStore>()(
           return null;
         }
 
-        // Calculer le numéro du lot attendu
-        // currentGroupIndex = 0, 3, 6... (multiples de 3)
-        // offset = 0 (Q), 1 (DQ), 2 (CP)
-        const offset = typeToOffset[state.currentTypeInGroup];
-        const expectedPrizeNumber = state.currentGroupIndex + offset + 1; // +1 car les lots commencent à 1
+        const expectedPrizeNumber = get().getCurrentPrizeNumber();
 
         console.log(`getCurrentPrize: groupIndex=${state.currentGroupIndex}, type=${state.currentTypeInGroup}, expectedNumber=${expectedPrizeNumber}`);
 
@@ -223,16 +226,9 @@ export const useTirageStore = create<TirageStore>()(
       isLastTypeInGroup: (): boolean => {
         return get().currentTypeInGroup === 'CP';
       },
-    }),
-    {
-      name: 'loto-tirage',
-      partialize: (state) => ({
-        currentTirage: state.currentTirage,
-        currentGroupIndex: state.currentGroupIndex,
-        currentTypeInGroup: state.currentTypeInGroup,
-      }),
-    }
-  )
+    })
+  // Note: Pas de persist localStorage car le cache est sur Vercel (Upstash Redis)
+  // Les prizes sont cachés côté serveur dans /api/lotofiesta/prizes
 );
 
 /**

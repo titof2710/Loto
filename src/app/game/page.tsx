@@ -43,6 +43,7 @@ export default function GamePage() {
     advanceToNextType,
     nextGroup,
     getCurrentPrize,
+    getCurrentPrizeNumber,
     isLastTypeInGroup,
   } = useTirageStore();
 
@@ -227,6 +228,7 @@ export default function GamePage() {
 
   // Cadeau actuel
   const currentPrize = getCurrentPrize();
+  const currentPrizeNumber = getCurrentPrizeNumber();
 
   return (
     <div className="p-4 space-y-4">
@@ -250,9 +252,12 @@ export default function GamePage() {
       {/* Cadeau actuel */}
       <CurrentPrize
         prize={currentPrize}
+        prizeNumber={currentPrizeNumber}
         tirageName={currentTirage?.title}
+        allPrizes={currentTirage?.prizes}
         isLoading={isPrizesLoading}
         onChangeTirage={tirageSelector.open}
+        onSkipToNext={advanceToNextType}
       />
 
       {/* Contrôles de partie */}

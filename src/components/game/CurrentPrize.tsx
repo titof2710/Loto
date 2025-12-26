@@ -1,14 +1,18 @@
 'use client';
 
-import { Gift, ChevronRight, Loader2 } from 'lucide-react';
+import { useState } from 'react';
+import { Gift, ChevronRight, Loader2, List, X, AlertTriangle } from 'lucide-react';
 import type { LotoPrize, PrizeType } from '@/types';
 import { cn } from '@/lib/utils/cn';
 
 interface CurrentPrizeProps {
   prize: LotoPrize | null;
+  prizeNumber?: number; // Numéro du lot attendu (pour afficher "Lot #X non trouvé")
   tirageName?: string;
+  allPrizes?: LotoPrize[]; // Tous les lots pour la modal
   isLoading?: boolean;
   onChangeTirage?: () => void;
+  onSkipToNext?: () => void; // Pour passer au lot suivant si celui-ci manque
 }
 
 // Couleurs par type de gain
@@ -37,7 +41,17 @@ const typeLabels: Record<PrizeType, string> = {
   'CP': 'Carton Plein',
 };
 
-export function CurrentPrize({ prize, tirageName, isLoading, onChangeTirage }: CurrentPrizeProps) {
+export function CurrentPrize({
+  prize,
+  prizeNumber,
+  tirageName,
+  allPrizes,
+  isLoading,
+  onChangeTirage,
+  onSkipToNext
+}: CurrentPrizeProps) {
+  const [showAllPrizes, setShowAllPrizes] = useState(false);
+
   if (isLoading) {
     return (
       <div className="bg-[var(--card)] rounded-xl border border-[var(--border)] p-4">
@@ -49,6 +63,76 @@ export function CurrentPrize({ prize, tirageName, isLoading, onChangeTirage }: C
     );
   }
 
+  // Lot non trouvé mais on peut continuer
+  if (!prize && prizeNumber) {
+    return (
+      <>
+        <div className="bg-[var(--card)] rounded-xl border-2 border-orange-500 overflow-hidden">
+          {/* En-tête */}
+          {tirageName && (
+            <div className="px-4 py-2 bg-[var(--muted)] border-b border-[var(--border)] flex items-center justify-between">
+              <span className="text-sm font-medium truncate">{tirageName}</span>
+              <div className="flex items-center gap-2">
+                {allPrizes && allPrizes.length > 0 && (
+                  <button
+                    onClick={() => setShowAllPrizes(true)}
+                    className="text-xs text-[var(--primary)] hover:underline flex items-center gap-1"
+                  >
+                    <List className="w-3 h-3" />
+                    Tous les lots
+                  </button>
+                )}
+                {onChangeTirage && (
+                  <button
+                    onClick={onChangeTirage}
+                    className="text-xs text-[var(--primary)] hover:underline flex items-center gap-1"
+                  >
+                    Changer
+                    <ChevronRight className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          <div className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="flex-shrink-0 w-12 h-12 rounded-lg bg-orange-500 flex items-center justify-center">
+                <AlertTriangle className="w-6 h-6 text-white" />
+              </div>
+              <div className="flex-1">
+                <p className="text-orange-600 dark:text-orange-400 font-medium">
+                  Lot #{prizeNumber} non trouvé
+                </p>
+                <p className="text-sm text-[var(--muted-foreground)]">
+                  L'OCR n'a pas détecté ce lot
+                </p>
+              </div>
+              {onSkipToNext && (
+                <button
+                  onClick={onSkipToNext}
+                  className="px-3 py-2 bg-orange-500 text-white rounded-lg text-sm font-medium hover:bg-orange-600"
+                >
+                  Passer →
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Modal tous les lots */}
+        {showAllPrizes && allPrizes && (
+          <AllPrizesModal
+            prizes={allPrizes}
+            currentNumber={prizeNumber}
+            onClose={() => setShowAllPrizes(false)}
+          />
+        )}
+      </>
+    );
+  }
+
+  // Aucun lot du tout
   if (!prize) {
     return (
       <div className="bg-[var(--card)] rounded-xl border border-[var(--border)] p-4">
@@ -73,53 +157,162 @@ export function CurrentPrize({ prize, tirageName, isLoading, onChangeTirage }: C
   const colors = typeColors[prize.type];
 
   return (
-    <div className={cn(
-      'rounded-xl border-2 overflow-hidden transition-all',
-      prize.type === 'Q' && 'border-green-500 bg-green-500/5',
-      prize.type === 'DQ' && 'border-purple-500 bg-purple-500/5',
-      prize.type === 'CP' && 'border-yellow-500 bg-yellow-500/5',
-    )}>
-      {/* En-tête avec nom du tirage */}
-      {tirageName && (
-        <div className="px-4 py-2 bg-[var(--muted)] border-b border-[var(--border)] flex items-center justify-between">
-          <span className="text-sm font-medium truncate">{tirageName}</span>
-          {onChangeTirage && (
-            <button
-              onClick={onChangeTirage}
-              className="text-xs text-[var(--primary)] hover:underline flex items-center gap-1"
-            >
-              Changer
-              <ChevronRight className="w-3 h-3" />
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* Cadeau actuel */}
-      <div className="p-4">
-        <div className="flex items-start gap-3">
-          {/* Badge type */}
-          <div className={cn(
-            'flex-shrink-0 w-12 h-12 rounded-lg flex items-center justify-center text-white font-bold text-lg',
-            colors.bg
-          )}>
-            {prize.type}
-          </div>
-
-          {/* Détails */}
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
-              <span className={cn('text-xs font-semibold px-2 py-0.5 rounded', colors.badge)}>
-                {typeLabels[prize.type]}
-              </span>
-              <span className="text-xs text-[var(--muted-foreground)]">
-                Lot #{prize.number}
-              </span>
+    <>
+      <div className={cn(
+        'rounded-xl border-2 overflow-hidden transition-all',
+        prize.type === 'Q' && 'border-green-500 bg-green-500/5',
+        prize.type === 'DQ' && 'border-purple-500 bg-purple-500/5',
+        prize.type === 'CP' && 'border-yellow-500 bg-yellow-500/5',
+      )}>
+        {/* En-tête avec nom du tirage */}
+        {tirageName && (
+          <div className="px-4 py-2 bg-[var(--muted)] border-b border-[var(--border)] flex items-center justify-between">
+            <span className="text-sm font-medium truncate">{tirageName}</span>
+            <div className="flex items-center gap-2">
+              {allPrizes && allPrizes.length > 0 && (
+                <button
+                  onClick={() => setShowAllPrizes(true)}
+                  className="text-xs text-[var(--primary)] hover:underline flex items-center gap-1"
+                >
+                  <List className="w-3 h-3" />
+                  Tous les lots
+                </button>
+              )}
+              {onChangeTirage && (
+                <button
+                  onClick={onChangeTirage}
+                  className="text-xs text-[var(--primary)] hover:underline flex items-center gap-1"
+                >
+                  Changer
+                  <ChevronRight className="w-3 h-3" />
+                </button>
+              )}
             </div>
-            <p className={cn('font-bold text-lg leading-tight', colors.text)}>
-              {prize.description}
-            </p>
           </div>
+        )}
+
+        {/* Cadeau actuel */}
+        <div className="p-4">
+          <div className="flex items-start gap-3">
+            {/* Badge type */}
+            <div className={cn(
+              'flex-shrink-0 w-12 h-12 rounded-lg flex items-center justify-center text-white font-bold text-lg',
+              colors.bg
+            )}>
+              {prize.type}
+            </div>
+
+            {/* Détails */}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1">
+                <span className={cn('text-xs font-semibold px-2 py-0.5 rounded', colors.badge)}>
+                  {typeLabels[prize.type]}
+                </span>
+                <span className="text-xs text-[var(--muted-foreground)]">
+                  Lot #{prize.number}
+                </span>
+              </div>
+              <p className={cn('font-bold text-lg leading-tight', colors.text)}>
+                {prize.description}
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Modal tous les lots */}
+      {showAllPrizes && allPrizes && (
+        <AllPrizesModal
+          prizes={allPrizes}
+          currentNumber={prize.number}
+          onClose={() => setShowAllPrizes(false)}
+        />
+      )}
+    </>
+  );
+}
+
+/**
+ * Modal affichant tous les lots du tirage
+ */
+interface AllPrizesModalProps {
+  prizes: LotoPrize[];
+  currentNumber?: number;
+  onClose: () => void;
+}
+
+function AllPrizesModal({ prizes, currentNumber, onClose }: AllPrizesModalProps) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+      <div className="bg-[var(--card)] rounded-2xl w-full max-w-md max-h-[80vh] overflow-hidden shadow-xl">
+        {/* Header */}
+        <div className="flex items-center justify-between p-4 border-b border-[var(--border)]">
+          <div className="flex items-center gap-2">
+            <Gift className="w-5 h-5 text-[var(--primary)]" />
+            <h2 className="font-bold text-lg">Tous les lots ({prizes.length})</h2>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-2 rounded-lg hover:bg-[var(--muted)] transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Liste des lots */}
+        <div className="overflow-y-auto max-h-[60vh] divide-y divide-[var(--border)]">
+          {prizes.map((prize) => {
+            const colors = typeColors[prize.type];
+            const isCurrent = prize.number === currentNumber;
+
+            return (
+              <div
+                key={prize.number}
+                className={cn(
+                  'p-3 flex items-center gap-3',
+                  isCurrent && 'bg-[var(--primary)]/10'
+                )}
+              >
+                {/* Badge type */}
+                <div className={cn(
+                  'flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center text-white font-bold',
+                  colors.bg
+                )}>
+                  {prize.type}
+                </div>
+
+                {/* Détails */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <span className="text-xs font-medium text-[var(--muted-foreground)]">
+                      #{prize.number}
+                    </span>
+                    <span className={cn('text-xs px-1.5 py-0.5 rounded', colors.badge)}>
+                      {typeLabels[prize.type]}
+                    </span>
+                    {isCurrent && (
+                      <span className="text-xs px-1.5 py-0.5 rounded bg-[var(--primary)] text-white">
+                        En cours
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm font-medium truncate">
+                    {prize.description}
+                  </p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Footer */}
+        <div className="p-4 border-t border-[var(--border)] bg-[var(--muted)]">
+          <button
+            onClick={onClose}
+            className="w-full py-2 bg-[var(--primary)] text-white rounded-lg font-medium"
+          >
+            Fermer
+          </button>
         </div>
       </div>
     </div>
