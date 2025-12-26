@@ -181,44 +181,32 @@ function extractNumbersWithPositions(
   // Collecter tous les numéros valides avec leurs positions Y
   const numbersWithY: Array<{ number: number; yCenter: number; xCenter: number }> = [];
 
+  // Log tous les textes détectés pour debug
+  console.log('=== Tous les textes détectés par Google Vision ===');
+  for (const annotation of annotations) {
+    const text = annotation.description?.trim();
+    const vertices = annotation.boundingPoly?.vertices || [];
+    const yValues = vertices.map(v => v.y || 0).filter(y => y > 0);
+    const yCenter = yValues.length > 0 ? yValues.reduce((a, b) => a + b, 0) / yValues.length : 0;
+    console.log(`Text: "${text}" at Y=${Math.round(yCenter)}`);
+  }
+  console.log('=== Fin des textes détectés ===');
+
   for (const annotation of annotations) {
     const text = annotation.description?.trim();
     if (!text) continue;
 
-    // Ignorer le numéro de série et ses composants
+    // Ignorer le numéro de série complet (format XX-XXXX)
     if (serialInfo) {
-      if (text.includes(serialInfo.originalPattern) || text.includes(serialInfo.serialNumber)) {
+      if (text === serialInfo.originalPattern || text === serialInfo.serialNumber) {
+        console.log(`Ignoring serial number: "${text}"`);
         continue;
       }
-      // Ignorer les parties du numéro de série (format XX-XXXX)
-      if (text.match(/^\d{1,2}-\d{4}$/) || text.match(/^\d-\d{4}$/)) {
+      // Ignorer les patterns de numéro de série (format XX-XXXX ou X-XXXX)
+      if (text.match(/^\d{1,2}-\d{4}$/)) {
+        console.log(`Ignoring serial pattern: "${text}"`);
         continue;
       }
-      // Pour le préfixe et suffixe, vérifier la position Y avant d'ignorer
-      // car "30" peut être un vrai numéro de loto même si le numéro de série est "30-XXXX"
-      const serialPrefix = serialInfo.serialNumber.split('-')[0]; // "24" ou "30"
-      const serialSuffix = serialInfo.serialNumber.split('-')[1]; // "0544"
-
-      // Le suffixe (ex: "0544") n'est jamais un numéro de loto valide, on peut l'ignorer
-      if (text === serialSuffix) {
-        continue;
-      }
-
-      // Pour le préfixe, vérifier la position Y - si c'est en haut de l'image, c'est le numéro de série
-      if (text === serialPrefix) {
-        const vertices = annotation.boundingPoly?.vertices || [];
-        if (vertices.length >= 4) {
-          const yValues = vertices.map(v => v.y || 0).filter(y => y > 0);
-          const yCenter = yValues.length > 0 ? yValues.reduce((a, b) => a + b, 0) / yValues.length : 0;
-          // Si le numéro est dans les 15% supérieurs de l'image (Y < 60), c'est le numéro de série
-          if (yCenter < 60) {
-            console.log(`Ignoring "${text}" at Y=${yCenter} - serial number prefix`);
-            continue;
-          }
-          // Sinon, c'est probablement un vrai numéro de loto (ex: "30" dans la grille)
-        }
-      }
-
     }
 
     // Ignorer LOTOQUINE et variations
