@@ -1,6 +1,7 @@
 import Tesseract from 'tesseract.js';
 import type { DetectedCarton } from './imagePreprocessing';
-import { extractNumbersWithOCRSpace } from './ocrSpaceAPI';
+import { extractNumbersFromCartonGoogleVision } from './googleVisionOCR';
+import { extractNumbersFromCartonOCRSpace } from './ocrSpaceAPI';
 
 export interface OCRResult {
   numbers: number[];
@@ -20,34 +21,73 @@ export interface CartonOCRResult {
 
 /**
  * Extrait les numéros d'une image de carton via OCR
- * Utilise OCR.space API par défaut (meilleur pour les chiffres)
- * Fallback sur Tesseract.js si OCR.space échoue
+ * Ordre de priorité:
+ * 1. Google Cloud Vision (le plus précis)
+ * 2. OCR.space (fallback)
+ * 3. Tesseract.js (dernier recours)
  */
 export async function extractNumbersFromImage(
   imageSource: string | File,
   onProgress?: (progress: number) => void
 ): Promise<OCRResult> {
   try {
-    // Essayer d'abord avec OCR.space (meilleur pour les chiffres)
-    console.log('Tentative OCR avec OCR.space API...');
-    const ocrSpaceResult = await extractNumbersWithOCRSpace(imageSource, onProgress);
+    // 1. Essayer d'abord avec Google Cloud Vision (le plus précis)
+    console.log('Tentative OCR avec Google Cloud Vision...');
+    const googleResult = await extractNumbersFromCartonGoogleVision(imageSource, (p) => onProgress?.(p * 0.5));
 
-    if (ocrSpaceResult.numbers.length >= 5) {
-      console.log('OCR.space a trouvé', ocrSpaceResult.numbers.length, 'numéros:', ocrSpaceResult.numbers);
-      return ocrSpaceResult;
+    if (googleResult.numbers.length >= 12) {
+      console.log('Google Vision a trouvé', googleResult.numbers.length, 'numéros:', googleResult.numbers);
+      return googleResult;
     }
 
-    // Fallback sur Tesseract si OCR.space n'a pas trouvé assez de numéros
-    console.log('OCR.space insuffisant, fallback sur Tesseract.js...');
-    const numbers = await extractNumbersFromCartonGrid(imageSource);
+    // 2. Fallback sur OCR.space si Google Vision n'a pas trouvé assez
+    if (googleResult.numbers.length < 10) {
+      console.log('Google Vision insuffisant, fallback sur OCR.space...');
+      const ocrSpaceResult = await extractNumbersFromCartonOCRSpace(imageSource, (p) => onProgress?.(0.5 + p * 0.4));
+
+      // Fusionner les résultats
+      const mergedNumbers = [...googleResult.numbers];
+      for (const num of ocrSpaceResult.numbers) {
+        if (!mergedNumbers.includes(num)) {
+          mergedNumbers.push(num);
+        }
+      }
+
+      if (mergedNumbers.length >= googleResult.numbers.length) {
+        return {
+          numbers: mergedNumbers.sort((a, b) => a - b).slice(0, 15),
+          confidence: mergedNumbers.length === 15 ? 95 : (mergedNumbers.length / 15) * 100,
+          rawText: googleResult.rawText + ' | ' + ocrSpaceResult.rawText,
+          serialNumber: googleResult.serialNumber || ocrSpaceResult.serialNumber,
+        };
+      }
+    }
+
+    // 3. Fallback sur Tesseract si toujours insuffisant
+    if (googleResult.numbers.length < 8) {
+      console.log('Fallback sur Tesseract.js...');
+      const tesseractNumbers = await extractNumbersFromCartonGrid(imageSource);
+
+      // Fusionner avec les résultats Google
+      const allNumbers = [...googleResult.numbers];
+      for (const num of tesseractNumbers) {
+        if (!allNumbers.includes(num)) {
+          allNumbers.push(num);
+        }
+      }
+
+      onProgress?.(1);
+
+      return {
+        numbers: allNumbers.sort((a, b) => a - b).slice(0, 15),
+        confidence: allNumbers.length === 15 ? 90 : (allNumbers.length / 15) * 100,
+        rawText: googleResult.rawText,
+        serialNumber: googleResult.serialNumber,
+      };
+    }
 
     onProgress?.(1);
-
-    return {
-      numbers: numbers.sort((a, b) => a - b),
-      confidence: numbers.length === 15 ? 95 : (numbers.length / 15) * 100,
-      rawText: numbers.join(' '),
-    };
+    return googleResult;
   } catch (error) {
     console.error('OCR Error:', error);
     return {
