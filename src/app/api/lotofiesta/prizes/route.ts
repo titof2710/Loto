@@ -189,6 +189,7 @@ function parsePrizesFromOCRText(text: string): LotoPrize[] {
   }
 
   console.log('Prizes found with line-by-line:', prizes.length);
+  console.log('Line-by-line prizes:', prizes.map(p => `#${p.number} ${p.type}`).join(', '));
 
   // Si le parsing ligne par ligne n'a pas trouvé assez de lots (minimum 6 = 2 groupes),
   // ou s'il manque des lots importants (comme le lot #1), essayer le parsing flexible
@@ -197,14 +198,74 @@ function parsePrizesFromOCRText(text: string): LotoPrize[] {
     console.log('Line-by-line insufficient, trying flexible parsing...');
     const flexPrizes = parsePrizesFlexible(text);
     console.log('Prizes found with flexible parsing:', flexPrizes.length);
+    console.log('Flexible prizes:', flexPrizes.map(p => `#${p.number} ${p.type}`).join(', '));
 
     // Utiliser le résultat qui a le plus de lots
     if (flexPrizes.length > prizes.length) {
-      return flexPrizes;
+      // Si on a trouvé des lots mais qu'il en manque (notamment les Q),
+      // compléter avec les lots manquants basés sur le pattern
+      const finalPrizes = completeWithMissingPrizes(flexPrizes, text);
+      return finalPrizes;
     }
   }
 
   return prizes.sort((a, b) => a.number - b.number);
+}
+
+/**
+ * Complète les lots manquants quand l'OCR n'a pas réussi à tous les détecter
+ * Utilise le pattern des lots trouvés pour deviner les manquants
+ */
+function completeWithMissingPrizes(prizes: LotoPrize[], rawText: string): LotoPrize[] {
+  const result = [...prizes];
+
+  // Chercher les numéros de lots manquants
+  const foundNumbers = new Set(prizes.map(p => p.number));
+  const maxFound = Math.max(...prizes.map(p => p.number));
+
+  console.log('Found lot numbers:', [...foundNumbers].sort((a,b) => a-b).join(', '));
+  console.log('Max lot number found:', maxFound);
+
+  // Pour chaque lot manquant jusqu'au max trouvé
+  for (let lotNum = 1; lotNum <= maxFound; lotNum++) {
+    if (foundNumbers.has(lotNum)) continue;
+
+    const expectedType = getExpectedType(lotNum);
+
+    // Essayer de trouver une description générique basée sur les lots similaires
+    // ou dans le texte brut
+    let description = `Lot #${lotNum}`;
+
+    // Chercher si le texte contient des patterns comme "CARTE CADEAU" avec des montants
+    if (rawText.includes('CARTE CADEAU') || rawText.includes('CARTE')) {
+      // Chercher un montant associé au pattern attendu
+      const normalized = rawText.replace(/\n/g, ' ').replace(/\s+/g, ' ');
+
+      // Essayer de trouver le montant pour ce lot
+      // Pattern: chercher "N Q/DQ/CP ... €" ou "N Q/DQ/CP ... CARTE"
+      const searchPattern = new RegExp(
+        `(?:^|[^0-9])${lotNum}\\s+${expectedType}\\s+.*?(\\d+)\\s*€`,
+        'i'
+      );
+      const priceMatch = normalized.match(searchPattern);
+
+      if (priceMatch) {
+        description = `CARTE CADEAU ${priceMatch[1]}€`;
+      } else {
+        // Sinon, juste "CARTE CADEAU" générique
+        description = 'CARTE CADEAU';
+      }
+    }
+
+    console.log(`Adding missing lot #${lotNum} ${expectedType}: ${description}`);
+    result.push({
+      number: lotNum,
+      type: expectedType,
+      description,
+    });
+  }
+
+  return result.sort((a, b) => a.number - b.number);
 }
 
 /**
