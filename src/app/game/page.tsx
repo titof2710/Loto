@@ -533,29 +533,46 @@ export default function GamePage() {
                 cartonsProgress={cartonsProgress.filter(
                   (p) => p.plancheId === planche.id
                 )}
+                currentPrizeType={currentTypeInGroup}
               />
             </div>
           ))}
         </div>
       )}
 
-      {/* Alertes "plus qu'un" */}
+      {/* Alertes "plus qu'un" - selon le type actuel */}
       {isPlaying && (
         <div className="space-y-2">
-          {cartonsProgress
+          {/* Alerte Quine - seulement si on joue pour Q */}
+          {currentTypeInGroup === 'Q' && cartonsProgress
             .filter((p) => p.missingForQuine.length === 1)
-            .slice(0, 3) // Limiter à 3 alertes max
+            .slice(0, 3)
             .map((progress) => (
               <div
                 key={progress.cartonId}
-                className="p-3 bg-orange-500/10 border border-orange-500/30 rounded-lg animate-pulse-alert"
+                className="p-3 bg-green-500/10 border border-green-500/30 rounded-lg animate-pulse-alert"
               >
-                <span className="text-orange-600 dark:text-orange-400 font-medium">
-                  Plus qu'un pour la quine ! Manque le {progress.missingForQuine[0]}
+                <span className="text-green-600 dark:text-green-400 font-medium">
+                  Plus qu'un pour la QUINE ! Manque le {progress.missingForQuine[0]}
                 </span>
               </div>
             ))}
-          {cartonsProgress
+          {/* Alerte Double Quine - seulement si on joue pour DQ */}
+          {currentTypeInGroup === 'DQ' && cartonsProgress
+            .filter((p) => p.missingForDoubleQuine.length === 1)
+            .slice(0, 3)
+            .map((progress) => (
+              <div
+                key={`dq-${progress.cartonId}`}
+                className="p-3 bg-purple-500/10 border border-purple-500/30 rounded-lg animate-pulse-alert"
+              >
+                <span className="text-purple-600 dark:text-purple-400 font-medium">
+                  Plus qu'un pour la DOUBLE QUINE ! Manque le {progress.missingForDoubleQuine[0]}
+                </span>
+              </div>
+            ))}
+          {/* Alerte Carton Plein - seulement si on joue pour CP */}
+          {currentTypeInGroup === 'CP' && cartonsProgress
             .filter((p) => p.missingForCartonPlein.length === 1)
             .slice(0, 3)
             .map((progress) => (

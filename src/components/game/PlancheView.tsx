@@ -1,16 +1,17 @@
 'use client';
 
 import { cn } from '@/lib/utils/cn';
-import type { Planche, CartonProgress } from '@/types';
+import type { Planche, CartonProgress, PrizeType } from '@/types';
 import { CartonGrid } from './CartonGrid';
 import { Trophy, AlertCircle } from 'lucide-react';
 
 interface PlancheViewProps {
   planche: Planche;
   cartonsProgress: CartonProgress[];
+  currentPrizeType?: PrizeType;
 }
 
-export function PlancheView({ planche, cartonsProgress }: PlancheViewProps) {
+export function PlancheView({ planche, cartonsProgress, currentPrizeType = 'Q' }: PlancheViewProps) {
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
@@ -24,8 +25,16 @@ export function PlancheView({ planche, cartonsProgress }: PlancheViewProps) {
         {planche.cartons.map((carton) => {
           const progress = cartonsProgress.find((p) => p.cartonId === carton.id);
           const completedLines = progress?.linesCompleted.filter(Boolean).length || 0;
+
+          // Calculer si on est proche de gagner selon le type actuel
           const missingForQuine = progress?.missingForQuine.length || 5;
-          const isCloseToWin = missingForQuine === 1;
+          const missingForDQ = progress?.missingForDoubleQuine.length || 10;
+          const missingForCP = progress?.missingForCartonPlein.length || 15;
+
+          const isCloseToWin =
+            (currentPrizeType === 'Q' && missingForQuine === 1) ||
+            (currentPrizeType === 'DQ' && missingForDQ === 1) ||
+            (currentPrizeType === 'CP' && missingForCP === 1);
 
           return (
             <div
@@ -79,7 +88,7 @@ export function PlancheView({ planche, cartonsProgress }: PlancheViewProps) {
                   {progress.markedNumbers.length}/15
                   {isCloseToWin && (
                     <span className="ml-1 text-orange-500 font-bold">
-                      Plus qu'un !
+                      Plus qu'un {currentPrizeType === 'Q' ? 'Q' : currentPrizeType === 'DQ' ? 'DQ' : 'CP'} !
                     </span>
                   )}
                 </div>
