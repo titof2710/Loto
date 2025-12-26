@@ -214,7 +214,7 @@ function parsePrizesFromOCRText(text: string): LotoPrize[] {
 
 /**
  * Complète les lots manquants quand l'OCR n'a pas réussi à tous les détecter
- * Utilise le pattern des lots trouvés pour deviner les manquants
+ * Cherche le type réel dans le texte brut, sinon utilise le pattern standard
  */
 function completeWithMissingPrizes(prizes: LotoPrize[], rawText: string): LotoPrize[] {
   const result = [...prizes];
@@ -226,25 +226,31 @@ function completeWithMissingPrizes(prizes: LotoPrize[], rawText: string): LotoPr
   console.log('Found lot numbers:', [...foundNumbers].sort((a,b) => a-b).join(', '));
   console.log('Max lot number found:', maxFound);
 
+  const normalized = rawText.replace(/\n/g, ' ').replace(/\s+/g, ' ');
+
   // Pour chaque lot manquant jusqu'au max trouvé
   for (let lotNum = 1; lotNum <= maxFound; lotNum++) {
     if (foundNumbers.has(lotNum)) continue;
 
-    const expectedType = getExpectedType(lotNum);
+    // D'abord essayer de trouver le type réel dans le texte brut
+    // Pattern: "N Q/DQ/CP" où N est le numéro du lot
+    const typePattern = lotNum < 10
+      ? new RegExp(`(?:^|[^0-9])${lotNum}\\s+(Q|DQ|CP)\\s`, 'i')
+      : new RegExp(`(?:^|\\s)${lotNum}\\s+(Q|DQ|CP)\\s`, 'i');
+    const typeMatch = normalized.match(typePattern);
 
-    // Essayer de trouver une description générique basée sur les lots similaires
-    // ou dans le texte brut
+    // Utiliser le type trouvé ou le type calculé par défaut
+    const foundType = typeMatch ? typeMatch[1].toUpperCase() as PrizeType : getExpectedType(lotNum);
+
+    // Essayer de trouver une description
     let description = `Lot #${lotNum}`;
 
     // Chercher si le texte contient des patterns comme "CARTE CADEAU" avec des montants
     if (rawText.includes('CARTE CADEAU') || rawText.includes('CARTE')) {
-      // Chercher un montant associé au pattern attendu
-      const normalized = rawText.replace(/\n/g, ' ').replace(/\s+/g, ' ');
-
       // Essayer de trouver le montant pour ce lot
-      // Pattern: chercher "N Q/DQ/CP ... €" ou "N Q/DQ/CP ... CARTE"
+      // Pattern: chercher "N Q/DQ/CP ... €"
       const searchPattern = new RegExp(
-        `(?:^|[^0-9])${lotNum}\\s+${expectedType}\\s+.*?(\\d+)\\s*€`,
+        `(?:^|[^0-9])${lotNum}\\s+(?:Q|DQ|CP)\\s+.*?(\\d+)\\s*€`,
         'i'
       );
       const priceMatch = normalized.match(searchPattern);
@@ -252,15 +258,14 @@ function completeWithMissingPrizes(prizes: LotoPrize[], rawText: string): LotoPr
       if (priceMatch) {
         description = `CARTE CADEAU ${priceMatch[1]}€`;
       } else {
-        // Sinon, juste "CARTE CADEAU" générique
         description = 'CARTE CADEAU';
       }
     }
 
-    console.log(`Adding missing lot #${lotNum} ${expectedType}: ${description}`);
+    console.log(`Adding missing lot #${lotNum} ${foundType}: ${description}`);
     result.push({
       number: lotNum,
-      type: expectedType,
+      type: foundType,
       description,
     });
   }
@@ -270,12 +275,12 @@ function completeWithMissingPrizes(prizes: LotoPrize[], rawText: string): LotoPr
 
 /**
  * Parsing plus flexible du texte OCR
- * Cherche les patterns Q/DQ/CP dans tout le texte
- * Format attendu: "N TYPE [quantité] description"
- * Ex: "1 Q 1 Tablette SAMSUNG" ou "2 DQ Écouteurs MARSHALL"
+ * Cherche TOUS les patterns "N Q/DQ/CP" dans le texte (pas seulement les types attendus)
+ * Certains tirages ont des formats spéciaux où les types ne suivent pas le pattern Q/DQ/CP
  */
 function parsePrizesFlexible(text: string): LotoPrize[] {
   const prizes: LotoPrize[] = [];
+  const foundLotNumbers = new Set<number>();
 
   // Normaliser le texte
   const normalized = text
@@ -284,61 +289,75 @@ function parsePrizesFlexible(text: string): LotoPrize[] {
     .replace(/\s+/g, ' ')
     .trim();
 
-  console.log('Normalized text (first 1500):', normalized.substring(0, 1500));
+  console.log('Normalized text (first 2000):', normalized.substring(0, 2000));
 
-  // Stratégie: pour chaque lot attendu (1-24), chercher TOUTES les occurrences
-  // de "N TYPE" dans le texte, puis garder la PREMIÈRE qui a le bon type
-  // Cela évite de confondre "1 Q 1 Smartphone" avec une quantité "1 Q" ailleurs
-  //
-  // IMPORTANT: Pour les numéros < 10, on doit s'assurer qu'on ne matche pas
-  // un numéro plus grand (ex: "11 Q" ne doit pas matcher pour le lot 1)
-  // On utilise une "word boundary" ou on vérifie que le caractère avant n'est pas un chiffre
+  // NOUVELLE STRATÉGIE: Chercher TOUS les patterns "N TYPE" (avec N de 1 à 24)
+  // et accepter N'IMPORTE QUEL type (Q, DQ, CP), pas seulement le type attendu
+  // Cela permet de gérer les tirages avec formats spéciaux
 
-  for (let lotNum = 1; lotNum <= 24; lotNum++) {
-    const expectedType = getExpectedType(lotNum);
+  // Pattern global pour trouver tous les lots: numéro (1-24) suivi de Q/DQ/CP
+  // Pour éviter les faux positifs avec les quantités, on cherche avec contexte
+  // (?:^|\s|[^0-9]) = début de chaîne, espace, ou non-chiffre
+  const allLotsPattern = /(?:^|\s|[^0-9])(\d{1,2})\s+(Q|DQ|CP)\s+/gi;
 
-    // Trouver TOUTES les occurrences de ce numéro suivi du type attendu
-    // Pour les numéros < 10, on s'assure qu'il n'y a pas de chiffre avant
-    // Pattern: début ou (espace + non-chiffre) puis le numéro puis espace puis type puis espace
-    const pattern = lotNum < 10
-      ? new RegExp(`(?:^|[^0-9])(${lotNum})\\s+(${expectedType})\\s`, 'gi')
-      : new RegExp(`(?:^|\\s)(${lotNum})\\s+(${expectedType})\\s`, 'gi');
-    const matches: Array<{ index: number; fullMatch: string }> = [];
+  const allMatches: Array<{
+    lotNum: number;
+    type: PrizeType;
+    index: number;
+    fullMatch: string;
+    endOfMatch: number;
+  }> = [];
 
-    let match;
-    while ((match = pattern.exec(normalized)) !== null) {
-      matches.push({
+  let match;
+  while ((match = allLotsPattern.exec(normalized)) !== null) {
+    const lotNum = parseInt(match[1], 10);
+    const type = match[2].toUpperCase() as PrizeType;
+
+    // Ignorer les numéros > 24 (probablement des prix en euros)
+    if (lotNum >= 1 && lotNum <= 24) {
+      allMatches.push({
+        lotNum,
+        type,
         index: match.index,
         fullMatch: match[0],
+        endOfMatch: match.index + match[0].length,
       });
     }
+  }
 
-    if (matches.length === 0) {
-      console.log(`Lot #${lotNum} ${expectedType}: not found`);
+  console.log('All matches found:', allMatches.map(m => `#${m.lotNum} ${m.type} @${m.index}`).join(', '));
+
+  // Trier par position dans le texte
+  allMatches.sort((a, b) => a.index - b.index);
+
+  // Pour chaque lot (1-24), trouver la PREMIÈRE occurrence
+  // (évite les doublons si un même numéro apparaît plusieurs fois)
+  for (let lotNum = 1; lotNum <= 24; lotNum++) {
+    // Chercher la première occurrence de ce numéro de lot
+    const lotMatch = allMatches.find(m => m.lotNum === lotNum && !foundLotNumbers.has(m.lotNum));
+
+    if (!lotMatch) {
+      console.log(`Lot #${lotNum}: not found in OCR`);
       continue;
     }
 
-    // Prendre la PREMIÈRE occurrence (c'est normalement le vrai numéro de lot)
-    const firstMatch = matches[0];
-    console.log(`Lot #${lotNum} ${expectedType}: found ${matches.length} occurrences, using first at index ${firstMatch.index}`);
+    foundLotNumbers.add(lotNum);
 
-    // Trouver la fin de la description (prochain lot ou fin de texte)
-    const startIdx = firstMatch.index + firstMatch.fullMatch.length;
+    // Utiliser le TYPE LU par l'OCR (pas le type calculé)
+    const actualType = lotMatch.type;
+    const expectedType = getExpectedType(lotNum);
 
-    // Chercher le prochain lot (peu importe lequel, on cherche le pattern général)
-    // IMPORTANT: On coupe dès qu'on trouve un pattern "N Q/DQ/CP" même si le type
-    // ne correspond pas au numéro, car l'OCR peut mélanger les colonnes
+    if (actualType !== expectedType) {
+      console.log(`⚠️ Lot #${lotNum}: type OCR=${actualType} diffère du type attendu=${expectedType} (format spécial)`);
+    }
+
+    // Trouver la fin de la description = début du prochain lot
+    const startIdx = lotMatch.endOfMatch;
     let endIdx = normalized.length;
-    const nextLotPattern = /\s(\d{1,2})\s+(Q|DQ|CP)\s/gi;
-    nextLotPattern.lastIndex = startIdx;
 
-    let nextMatch;
-    while ((nextMatch = nextLotPattern.exec(normalized)) !== null) {
-      const nextNum = parseInt(nextMatch[1], 10);
-
-      // Couper dès qu'on trouve un autre numéro suivi de Q/DQ/CP
-      // (peu importe si le type correspond ou non)
-      if (nextNum >= 1 && nextNum <= 24 && nextNum !== lotNum) {
+    // Chercher le prochain lot dans la liste des matches (triée par position)
+    for (const nextMatch of allMatches) {
+      if (nextMatch.index > startIdx && nextMatch.lotNum !== lotNum) {
         endIdx = nextMatch.index;
         break;
       }
@@ -355,23 +374,22 @@ function parsePrizesFlexible(text: string): LotoPrize[] {
       .replace(/\s+/g, ' ')
       .trim();
 
-    // Si la description est trop courte et ne contient pas de prix (€),
-    // c'est peut-être que l'OCR a lu en colonnes et le prix est coupé
-    // Chercher un prix proche (ex: "50€", "100€", "1000€")
-    if (!description.includes('€') && description.length < 30) {
-      // Chercher un prix juste après dans le texte brut
-      const afterDesc = normalized.substring(endIdx, endIdx + 20);
-      const priceMatch = afterDesc.match(/^[\s]*(\d+€)/);
-      if (priceMatch) {
-        description = description + ' ' + priceMatch[1];
+    // Limiter la longueur de la description (évite les descriptions mélangées multi-colonnes)
+    if (description.length > 80) {
+      // Chercher un point de coupure naturel (prix en €, virgule, etc.)
+      const euroMatch = description.match(/^(.+?\d+\s*€)/);
+      if (euroMatch) {
+        description = euroMatch[1];
+      } else {
+        description = description.substring(0, 80).trim();
       }
     }
 
     if (description.length > 2) {
-      console.log(`✓ Prize #${lotNum} ${expectedType}: ${description.substring(0, 50)}`);
+      console.log(`✓ Prize #${lotNum} ${actualType}: ${description.substring(0, 60)}`);
       prizes.push({
         number: lotNum,
-        type: expectedType,
+        type: actualType, // Utiliser le type réellement lu, pas le type calculé
         description,
       });
     }
