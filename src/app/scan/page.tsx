@@ -3,7 +3,7 @@
 import { useState, useRef } from 'react';
 import { Camera, Upload, Edit3, Check, X, Shuffle, Loader2, AlertCircle, ChevronLeft, ChevronRight, Grid3X3, FileText } from 'lucide-react';
 import { useGameStore } from '@/stores/gameStore';
-import { generateRandomPlanche, createCartonFromNumbers } from '@/lib/game/cartonUtils';
+import { generateRandomPlanche, createCartonFromNumbers, createCartonFromNumbersWithPositions } from '@/lib/game/cartonUtils';
 import { CartonGrid } from '@/components/game/CartonGrid';
 import { cn } from '@/lib/utils/cn';
 import { useRouter } from 'next/navigation';
@@ -12,12 +12,14 @@ import type { Planche, Carton } from '@/types';
 import { detectCartons, type DetectedCarton } from '@/lib/ocr/cartonDetection';
 import { extractNumbersFromImage, validateCartonNumbers } from '@/lib/ocr/tesseractOCR';
 import { convertFirstPageToImage, isPDFFile } from '@/lib/ocr/pdfConverter';
+import type { NumberWithPosition } from '@/lib/ocr/googleVisionOCR';
 
 type Mode = 'choose' | 'camera' | 'detecting' | 'ocr-processing' | 'ocr-results' | 'manual' | 'edit';
 
 interface CartonResult {
   index: number;
   numbers: number[];
+  numbersWithPositions: NumberWithPosition[];
   isValid: boolean;
   imageData: string;
   isEditing: boolean;
@@ -122,6 +124,7 @@ export default function ScanPage() {
           cartonResults.push({
             index: carton.index,
             numbers: ocrResult.numbers,
+            numbersWithPositions: ocrResult.numbersWithPositions,
             isValid: validation.valid,
             imageData: carton.imageData,
             isEditing: false,
@@ -133,6 +136,7 @@ export default function ScanPage() {
           cartonResults.push({
             index: carton.index,
             numbers: [],
+            numbersWithPositions: [],
             isValid: false,
             imageData: carton.imageData,
             isEditing: false,
@@ -197,16 +201,29 @@ export default function ScanPage() {
 
       for (let i = 0; i < ocrResults.length; i++) {
         const result = ocrResults[i];
-        console.log(`Processing carton ${i}: ${result.numbers.length} numéros`);
+        console.log(`Processing carton ${i}: ${result.numbers.length} numéros, ${result.numbersWithPositions.length} positions`);
 
         if (result.numbers.length === 15) {
           try {
-            const carton = createCartonFromNumbers(result.numbers, validCartons.length, result.serialNumber);
+            // Utiliser les positions si disponibles, sinon fallback sur l'ancienne méthode
+            let carton: Carton | null = null;
+
+            if (result.numbersWithPositions.length === 15) {
+              console.log(`Carton ${i}: Using positions from OCR`);
+              carton = createCartonFromNumbersWithPositions(result.numbersWithPositions, validCartons.length, result.serialNumber);
+            }
+
+            // Fallback si les positions n'ont pas fonctionné
+            if (!carton) {
+              console.log(`Carton ${i}: Fallback to createCartonFromNumbers`);
+              carton = createCartonFromNumbers(result.numbers, validCartons.length, result.serialNumber);
+            }
+
             if (carton) {
               validCartons.push(carton);
               console.log(`Carton ${i} added successfully`);
             } else {
-              console.warn(`Carton ${i}: createCartonFromNumbers returned null`);
+              console.warn(`Carton ${i}: Both methods returned null`);
             }
           } catch (err) {
             console.error(`Error creating carton ${i}:`, err);

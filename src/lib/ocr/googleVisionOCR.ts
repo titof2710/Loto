@@ -8,8 +8,16 @@
  * Documentation: https://cloud.google.com/vision/docs/ocr
  */
 
+export interface NumberWithPosition {
+  number: number;
+  row: number; // 0, 1, ou 2 (haut, milieu, bas)
+  column: number; // 0-8
+  yCenter: number; // Position Y centrale pour debug
+}
+
 export interface GoogleVisionResult {
   numbers: number[];
+  numbersWithPositions: NumberWithPosition[];
   confidence: number;
   rawText: string;
   serialNumber?: string;
@@ -94,6 +102,7 @@ export async function extractNumbersWithGoogleVision(
       console.log('Google Vision: Aucun texte détecté');
       return {
         numbers: [],
+        numbersWithPositions: [],
         confidence: 0,
         rawText: '',
       };
@@ -109,14 +118,19 @@ export async function extractNumbersWithGoogleVision(
       console.log('Numéro de série détecté:', serialInfo.serialNumber, '(original:', serialInfo.originalPattern, ')');
     }
 
-    // Extraire les numéros de loto (1-90)
-    const numbers = extractLotoNumbers(rawText, serialInfo);
-    console.log('Google Vision numéros extraits:', numbers);
+    // Extraire les numéros avec leurs positions Y depuis les annotations individuelles
+    // Les éléments 1+ contiennent chaque mot/numéro détecté avec sa bounding box
+    const numbersWithPositions = extractNumbersWithPositions(textAnnotations.slice(1), serialInfo);
+    console.log('Google Vision numéros avec positions:', numbersWithPositions);
+
+    // Extraire juste les numéros pour compatibilité
+    const numbers = numbersWithPositions.map(n => n.number);
 
     onProgress?.(1);
 
     return {
       numbers: numbers.sort((a, b) => a - b),
+      numbersWithPositions,
       confidence: numbers.length === 15 ? 98 : (numbers.length / 15) * 100,
       rawText,
       serialNumber: serialInfo?.serialNumber,
@@ -125,6 +139,7 @@ export async function extractNumbersWithGoogleVision(
     console.error('Google Vision error:', error);
     return {
       numbers: [],
+      numbersWithPositions: [],
       confidence: 0,
       rawText: '',
     };
@@ -134,6 +149,132 @@ export async function extractNumbersWithGoogleVision(
 interface SerialNumberInfo {
   serialNumber: string;       // Numéro de série reconstitué (ex: "30-0035")
   originalPattern: string;    // Pattern original dans le texte (ex: "0-0035")
+}
+
+interface TextAnnotation {
+  description: string;
+  boundingPoly?: {
+    vertices: Array<{ x?: number; y?: number }>;
+  };
+}
+
+/**
+ * Retourne la colonne correspondante pour un numéro de loto
+ */
+function getColumnForNumber(num: number): number {
+  if (num < 1 || num > 90) return -1;
+  if (num < 10) return 0;
+  if (num === 90) return 8;
+  return Math.floor(num / 10);
+}
+
+/**
+ * Extrait les numéros avec leurs positions Y depuis les annotations Google Vision
+ */
+function extractNumbersWithPositions(
+  annotations: TextAnnotation[],
+  serialInfo?: SerialNumberInfo
+): NumberWithPosition[] {
+  const results: NumberWithPosition[] = [];
+  const seenNumbers = new Set<number>();
+
+  // Collecter tous les numéros valides avec leurs positions Y
+  const numbersWithY: Array<{ number: number; yCenter: number; xCenter: number }> = [];
+
+  for (const annotation of annotations) {
+    const text = annotation.description?.trim();
+    if (!text) continue;
+
+    // Ignorer le numéro de série
+    if (serialInfo) {
+      if (text.includes(serialInfo.originalPattern) || text.includes(serialInfo.serialNumber)) {
+        continue;
+      }
+      // Ignorer les parties du numéro de série
+      if (text.match(/^\d{1,2}-\d{4}$/) || text.match(/^\d-\d{4}$/)) {
+        continue;
+      }
+    }
+
+    // Ignorer LOTOQUINE et variations
+    if (/lotoquine|lotoouine|lotooline/i.test(text)) {
+      continue;
+    }
+
+    // Calculer le centre Y de la bounding box
+    const vertices = annotation.boundingPoly?.vertices || [];
+    if (vertices.length < 4) continue;
+
+    const yValues = vertices.map(v => v.y || 0).filter(y => y > 0);
+    const xValues = vertices.map(v => v.x || 0).filter(x => x > 0);
+    if (yValues.length === 0 || xValues.length === 0) continue;
+
+    const yCenter = yValues.reduce((a, b) => a + b, 0) / yValues.length;
+    const xCenter = xValues.reduce((a, b) => a + b, 0) / xValues.length;
+
+    // Extraire les numéros du texte
+    const nums = extractNumbersFromText(text);
+
+    for (const num of nums) {
+      if (num >= 1 && num <= 90 && !seenNumbers.has(num)) {
+        seenNumbers.add(num);
+        numbersWithY.push({ number: num, yCenter, xCenter });
+      }
+    }
+  }
+
+  if (numbersWithY.length === 0) {
+    return [];
+  }
+
+  // Déterminer les seuils de lignes basé sur les positions Y trouvées
+  const yPositions = numbersWithY.map(n => n.yCenter).sort((a, b) => a - b);
+  const minY = yPositions[0];
+  const maxY = yPositions[yPositions.length - 1];
+  const rowHeight = (maxY - minY) / 3;
+
+  console.log(`Y range: ${minY} - ${maxY}, rowHeight: ${rowHeight}`);
+
+  // Assigner chaque numéro à une ligne (0, 1, ou 2)
+  for (const item of numbersWithY) {
+    let row: number;
+    if (rowHeight < 5) {
+      // Si tous les numéros sont très proches, utiliser une heuristique simple
+      row = 0;
+    } else {
+      const relativeY = item.yCenter - minY;
+      row = Math.min(2, Math.floor(relativeY / rowHeight));
+    }
+
+    const column = getColumnForNumber(item.number);
+
+    results.push({
+      number: item.number,
+      row,
+      column,
+      yCenter: item.yCenter,
+    });
+  }
+
+  console.log('Numbers with rows assigned:', results.map(r => `${r.number}(row${r.row})`).join(', '));
+
+  return results;
+}
+
+/**
+ * Extrait les numéros d'un texte court (un mot détecté par Vision)
+ */
+function extractNumbersFromText(text: string): number[] {
+  const cleaned = text.replace(/[^\d]/g, '');
+  if (!cleaned) return [];
+
+  if (cleaned.length <= 2) {
+    const num = parseInt(cleaned, 10);
+    return num >= 1 && num <= 90 ? [num] : [];
+  }
+
+  // Pour les groupes de chiffres collés, utiliser splitDigitGroup
+  return splitDigitGroup(cleaned);
 }
 
 /**

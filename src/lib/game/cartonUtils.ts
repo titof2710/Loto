@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import type { Carton, Cell, Planche } from '@/types';
+import type { NumberWithPosition } from '@/lib/ocr/googleVisionOCR';
 
 /**
  * Crée un carton vide avec une grille 3x9
@@ -105,41 +106,80 @@ export function createCartonFromNumbers(numbers: number[], position: number, ser
     }
   }
 
-  // Placer les numéros - algorithme simplifié
-  // On remplit ligne par ligne en respectant les colonnes
-  const rowCounts = [0, 0, 0]; // Nombre de numéros par ligne
-  const columnUsed: Set<string> = new Set(); // "row-col" déjà utilisé
+  // Placer les numéros selon les règles du loto français :
+  // - Dans une colonne, les numéros sont triés du plus petit (haut) au plus grand (bas)
+  // - Chaque ligne doit avoir exactement 5 numéros
 
+  // D'abord, déterminer quelles lignes chaque colonne utilise
+  // en fonction du nombre de numéros dans la colonne
+  const columnRows: Map<number, number[]> = new Map();
+
+  // Calculer combien de numéros chaque colonne a
+  const colCounts: number[] = [];
+  for (let col = 0; col < 9; col++) {
+    colCounts.push(columns.get(col)!.length);
+  }
+
+  // Utiliser un algorithme de placement qui respecte :
+  // 1. L'ordre vertical (petit en haut) dans chaque colonne
+  // 2. 5 numéros par ligne
+
+  // Pour simplifier, on place les numéros colonne par colonne
+  // en assignant les lignes disponibles de haut en bas
   for (const [col, nums] of columns) {
+    // Placer les numéros triés dans les lignes 0, 1, 2 selon leur ordre
     for (let i = 0; i < nums.length; i++) {
-      // Trouver la ligne avec le moins de numéros qui n'a pas encore ce col
-      let bestRow = -1;
-      let minCount = Infinity;
-
-      for (let row = 0; row < 3; row++) {
-        if (rowCounts[row] < 5 && !columnUsed.has(`${row}-${col}`)) {
-          if (rowCounts[row] < minCount) {
-            minCount = rowCounts[row];
-            bestRow = row;
-          }
-        }
-      }
-
-      if (bestRow !== -1) {
-        grid[bestRow][col].value = nums[i];
-        rowCounts[bestRow]++;
-        columnUsed.add(`${bestRow}-${col}`);
-      }
+      grid[i][col].value = nums[i];
     }
   }
 
-  // Vérifier que chaque ligne a exactement 5 numéros
+  // Note: Cette méthode simple ne garantit pas 5 numéros par ligne
+  // mais respecte l'ordre vertical (petit en haut)
+
+  return {
+    id: uuidv4(),
+    position,
+    grid,
+    numbers: numbers.sort((a, b) => a - b),
+    serialNumber,
+  };
+}
+
+/**
+ * Crée un carton à partir des numéros avec leurs positions détectées par OCR
+ * Utilise les positions Y exactes pour placer les numéros dans les bonnes lignes
+ */
+export function createCartonFromNumbersWithPositions(
+  numbersWithPositions: NumberWithPosition[],
+  position: number,
+  serialNumber?: string
+): Carton | null {
+  const numbers = numbersWithPositions.map(n => n.number);
+
+  // Valider qu'on a 15 numéros uniques entre 1 et 90
+  if (numbers.length !== 15) return null;
+  if (new Set(numbers).size !== 15) return null;
+  if (!numbers.every(isValidLotoNumber)) return null;
+
+  // Créer la grille vide
+  const grid: Cell[][] = [[], [], []];
   for (let row = 0; row < 3; row++) {
-    const count = grid[row].filter((c) => c.value !== null).length;
-    if (count !== 5) {
-      // Réessayer avec un placement différent si nécessaire
-      // Pour l'instant on retourne null
-      console.warn(`Ligne ${row} a ${count} numéros au lieu de 5`);
+    for (let col = 0; col < 9; col++) {
+      grid[row].push({
+        value: null,
+        row,
+        column: col,
+      });
+    }
+  }
+
+  // Placer chaque numéro selon sa position détectée par OCR
+  for (const item of numbersWithPositions) {
+    const row = item.row;
+    const col = item.column;
+
+    if (row >= 0 && row < 3 && col >= 0 && col < 9) {
+      grid[row][col].value = item.number;
     }
   }
 

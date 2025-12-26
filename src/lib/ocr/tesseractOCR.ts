@@ -1,8 +1,9 @@
 import type { DetectedCarton } from './imagePreprocessing';
-import { extractNumbersFromCartonGoogleVision } from './googleVisionOCR';
+import { extractNumbersFromCartonGoogleVision, type NumberWithPosition } from './googleVisionOCR';
 
 export interface OCRResult {
   numbers: number[];
+  numbersWithPositions: NumberWithPosition[];
   confidence: number;
   rawText: string;
   serialNumber?: string;
@@ -11,6 +12,7 @@ export interface OCRResult {
 export interface CartonOCRResult {
   cartonIndex: number;
   numbers: number[];
+  numbersWithPositions: NumberWithPosition[];
   confidence: number;
   rawText: string;
   imageData: string;
@@ -33,6 +35,7 @@ export async function extractNumbersFromImage(
     console.error('OCR Error:', error);
     return {
       numbers: [],
+      numbersWithPositions: [],
       confidence: 0,
       rawText: '',
     };
@@ -60,6 +63,7 @@ export async function processDetectedCartons(
       results.push({
         cartonIndex: carton.index,
         numbers: ocrResult.numbers,
+        numbersWithPositions: ocrResult.numbersWithPositions,
         confidence: ocrResult.confidence,
         rawText: ocrResult.rawText,
         imageData: carton.imageData,
@@ -70,6 +74,7 @@ export async function processDetectedCartons(
       results.push({
         cartonIndex: carton.index,
         numbers: [],
+        numbersWithPositions: [],
         confidence: 0,
         rawText: '',
         imageData: carton.imageData,
