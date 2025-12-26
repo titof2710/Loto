@@ -774,15 +774,31 @@ export default function ScanPage() {
     );
   }
 
+  // Ajouter un numéro via le clavier
+  const handleAddNumber = (num: number) => {
+    const currentNumbers = parseNumbers(cartonNumbers);
+    if (currentNumbers.includes(num)) {
+      // Retirer le numéro s'il est déjà présent
+      const newNumbers = currentNumbers.filter(n => n !== num);
+      setCartonNumbers(newNumbers.join(' '));
+    } else if (currentNumbers.length < 15) {
+      // Ajouter le numéro
+      setCartonNumbers([...currentNumbers, num].join(' '));
+    }
+    setError('');
+  };
+
   // Mode saisie manuelle
   if (mode === 'manual') {
+    const currentNumbers = parseNumbers(cartonNumbers);
+
     return (
-      <div className="p-4 space-y-4">
+      <div className="p-4 space-y-3">
         <div className="flex items-center justify-between">
           <button onClick={handleBack} className="p-2 -ml-2 text-[var(--muted-foreground)]">
             <X className="w-5 h-5" />
           </button>
-          <h2 className="font-bold">Carton {currentCartonIndex + 1}/12</h2>
+          <h2 className="font-bold">Carton {cartons.length + 1}/12</h2>
           <button
             onClick={handleSave}
             disabled={cartons.length === 0}
@@ -812,20 +828,65 @@ export default function ScanPage() {
           ))}
         </div>
 
-        {/* Zone de saisie */}
+        {/* Numéros sélectionnés */}
         <div className="space-y-2">
-          <label className="text-sm font-medium">
-            Entrez les 15 numéros du carton (séparés par des espaces ou virgules)
-          </label>
-          <textarea
-            value={cartonNumbers}
-            onChange={(e) => setCartonNumbers(e.target.value)}
-            placeholder="Ex: 3 12 24 35 48 7 19 29 42 56 61 73 85 68 90"
-            rows={3}
-            className="w-full px-4 py-3 rounded-lg border border-[var(--border)] bg-[var(--card)] resize-none font-mono"
-          />
-          <div className="text-sm text-[var(--muted-foreground)]">
-            {parseNumbers(cartonNumbers).length}/15 numéros
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium">Numéros sélectionnés</span>
+            <span className={cn(
+              'text-sm px-2 py-0.5 rounded',
+              currentNumbers.length === 15
+                ? 'bg-green-500/20 text-green-600'
+                : 'bg-orange-500/20 text-orange-600'
+            )}>
+              {currentNumbers.length}/15
+            </span>
+          </div>
+          <div className="min-h-[60px] p-3 bg-[var(--card)] rounded-lg border border-[var(--border)]">
+            {currentNumbers.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5">
+                {currentNumbers.sort((a, b) => a - b).map((num) => (
+                  <button
+                    key={num}
+                    onClick={() => handleAddNumber(num)}
+                    className="px-2 py-1 bg-[var(--primary)] text-white rounded text-sm font-bold hover:bg-red-500 transition-colors"
+                    title="Cliquer pour retirer"
+                  >
+                    {num}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="text-[var(--muted-foreground)] text-sm text-center">
+                Tapez sur les numéros ci-dessous
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Clavier numérique 1-90 */}
+        <div className="space-y-2">
+          <span className="text-sm font-medium">Clavier 1-90</span>
+          <div className="grid grid-cols-10 gap-1">
+            {Array.from({ length: 90 }, (_, i) => i + 1).map((num) => {
+              const isSelected = currentNumbers.includes(num);
+              return (
+                <button
+                  key={num}
+                  onClick={() => handleAddNumber(num)}
+                  disabled={!isSelected && currentNumbers.length >= 15}
+                  className={cn(
+                    'aspect-square rounded text-xs font-bold transition-all',
+                    isSelected
+                      ? 'bg-[var(--primary)] text-white scale-105'
+                      : currentNumbers.length >= 15
+                      ? 'bg-[var(--muted)] text-[var(--muted-foreground)] opacity-50'
+                      : 'bg-[var(--muted)] hover:bg-[var(--primary)]/20'
+                  )}
+                >
+                  {num}
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -837,10 +898,10 @@ export default function ScanPage() {
 
         <button
           onClick={handleAddCarton}
-          disabled={parseNumbers(cartonNumbers).length !== 15}
+          disabled={currentNumbers.length !== 15}
           className={cn(
             'w-full py-3 rounded-lg font-medium transition-colors',
-            parseNumbers(cartonNumbers).length === 15
+            currentNumbers.length === 15
               ? 'bg-[var(--primary)] text-white'
               : 'bg-[var(--muted)] text-[var(--muted-foreground)] cursor-not-allowed'
           )}
