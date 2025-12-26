@@ -364,25 +364,46 @@ function extractNumbersFromText(text: string): number[] {
 
 /**
  * Extrait le numéro de série du carton (format XX-XXXX comme "30-0054")
- * Gère les cas où le premier chiffre est mal lu (ex: "0-0035" au lieu de "30-0035")
- * Retourne aussi le pattern original pour pouvoir le supprimer du texte
+ * Le numéro de série est TOUJOURS 2 chiffres - 4 chiffres
+ * Ignore les patterns composés comme "001-0668-24-0042"
  */
 function extractSerialNumber(text: string): SerialNumberInfo | undefined {
-  // Chercher un pattern complet comme "30-0054"
-  const fullMatch = text.match(/(\d{2})-(\d{4})/);
-  if (fullMatch) {
-    return {
-      serialNumber: `${fullMatch[1]}-${fullMatch[2]}`,
-      originalPattern: fullMatch[0],
-    };
+  // Ignorer les patterns composés (codes de référence globaux)
+  // Format: XXX-XXXX-XX-XXXX ou similaire
+  if (text.match(/\d{3}-\d{4}-\d{2}-\d{4}/)) {
+    console.log('Ignoring compound pattern for serial extraction:', text);
+    return undefined;
+  }
+
+  // Chercher tous les patterns XX-XXXX dans le texte
+  const allMatches = text.match(/\b(\d{2})-(\d{4})\b/g);
+  if (allMatches && allMatches.length > 0) {
+    // Prendre le dernier match (souvent le numéro de série du carton, pas l'en-tête)
+    // ou celui qui commence par 24- ou 30- (préfixes courants)
+    let bestMatch = allMatches[allMatches.length - 1];
+
+    for (const match of allMatches) {
+      if (match.startsWith('24-') || match.startsWith('30-')) {
+        bestMatch = match;
+        break;
+      }
+    }
+
+    const parts = bestMatch.match(/(\d{2})-(\d{4})/);
+    if (parts) {
+      return {
+        serialNumber: `${parts[1]}-${parts[2]}`,
+        originalPattern: bestMatch,
+      };
+    }
   }
 
   // Chercher un pattern incomplet comme "0-0035" (premier chiffre manquant/coupé)
-  const partialMatch = text.match(/(\d)-(\d{4})/);
+  const partialMatch = text.match(/\b(\d)-(\d{4})\b/);
   if (partialMatch) {
     return {
       serialNumber: `30-${partialMatch[2]}`,
-      originalPattern: partialMatch[0], // "0-0035" - c'est ça qu'on doit supprimer
+      originalPattern: partialMatch[0],
     };
   }
 
