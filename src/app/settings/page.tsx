@@ -1,18 +1,27 @@
 'use client';
 
-import { Volume2, VolumeX, Vibrate, Bell, BellOff, Trash2 } from 'lucide-react';
-import { useSettingsStore } from '@/stores/settingsStore';
+import { Volume2, VolumeX, Vibrate, Bell, BellOff, Trash2, Eye } from 'lucide-react';
+import { useSettingsStore, type ColorBlindMode } from '@/stores/settingsStore';
 import { useGameStore } from '@/stores/gameStore';
 import { cn } from '@/lib/utils/cn';
+
+const colorBlindModes: { value: ColorBlindMode; label: string; description: string }[] = [
+  { value: 'none', label: 'Normal', description: 'Vision normale' },
+  { value: 'deuteranopia', label: 'Deutéranopie', description: 'Confusion vert-rouge (la plus courante)' },
+  { value: 'protanopia', label: 'Protanopie', description: 'Difficulté à voir le rouge' },
+  { value: 'tritanopia', label: 'Tritanopie', description: 'Difficulté à voir le bleu' },
+];
 
 export default function SettingsPage() {
   const {
     soundEnabled,
     vibrationEnabled,
     alertsEnabled,
+    colorBlindMode,
     setSoundEnabled,
     setVibrationEnabled,
     setAlertsEnabled,
+    setColorBlindMode,
   } = useSettingsStore();
 
   const { planches, clearPlanches, resetGame } = useGameStore();
@@ -136,6 +145,50 @@ export default function SettingsPage() {
               />
             </div>
           </button>
+        </div>
+      </div>
+
+      {/* Section Accessibilité */}
+      <div className="space-y-3">
+        <h3 className="text-sm font-semibold text-[var(--muted-foreground)] uppercase tracking-wide">
+          Accessibilité
+        </h3>
+
+        <div className="bg-[var(--card)] rounded-xl border border-[var(--border)] p-4">
+          <div className="flex items-center gap-3 mb-3">
+            <Eye className="w-5 h-5 text-[var(--primary)]" />
+            <div>
+              <div className="font-medium">Mode daltonien</div>
+              <div className="text-sm text-[var(--muted-foreground)]">
+                Adapter les couleurs pour une meilleure visibilité
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-2">
+            {colorBlindModes.map((mode) => (
+              <button
+                key={mode.value}
+                onClick={() => setColorBlindMode(mode.value)}
+                className={cn(
+                  'flex items-center justify-between p-3 rounded-lg border transition-colors text-left',
+                  colorBlindMode === mode.value
+                    ? 'border-[var(--primary)] bg-[var(--primary)]/10'
+                    : 'border-[var(--border)] hover:border-[var(--primary)]/50'
+                )}
+              >
+                <div>
+                  <div className="font-medium">{mode.label}</div>
+                  <div className="text-xs text-[var(--muted-foreground)]">
+                    {mode.description}
+                  </div>
+                </div>
+                {colorBlindMode === mode.value && (
+                  <div className="w-4 h-4 rounded-full bg-[var(--primary)]" />
+                )}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 

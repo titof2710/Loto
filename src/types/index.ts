@@ -108,3 +108,45 @@ export interface Settings {
   alertsEnabled: boolean;
   theme: 'light' | 'dark' | 'system';
 }
+
+/**
+ * Partie sauvegardée dans l'historique
+ */
+export interface GameHistory {
+  id: string;
+  date: Date;
+  plancheIds: string[];
+  plancheNames: string[];
+  drawnBalls: number[];        // Juste les numéros pour économiser l'espace
+  totalBalls: number;
+  wins: GameHistoryWin[];
+  duration: number;            // Durée en secondes
+}
+
+/**
+ * Gain dans l'historique
+ */
+export interface GameHistoryWin {
+  type: WinType;
+  cartonSerialNumber?: string;
+  cartonPosition: number;
+  plancheName: string;
+  atBallNumber: number;
+  atBallCount: number;         // Combien de boules tirées au moment du gain
+}
+
+/**
+ * Statistiques globales
+ */
+export interface GlobalStats {
+  totalGames: number;
+  totalQuines: number;
+  totalDoubleQuines: number;
+  totalCartonsPlein: number;
+  totalBallsDrawn: number;
+  averageBallsToQuine: number;
+  averageBallsToCartonPlein: number;
+  numberFrequency: Record<number, number>;  // Fréquence de chaque numéro (1-90)
+  fastestQuine: number;        // Moins de boules pour une quine
+  fastestCartonPlein: number;  // Moins de boules pour un carton plein
+}

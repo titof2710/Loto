@@ -114,3 +114,93 @@ html, body {
 .carton-cell.empty {
   background: var(--muted);
 }
+
+/* Mode daltonien - Deutéranopie (vert-rouge) */
+.colorblind-deuteranopia {
+  --cb-green: #0077bb;  /* Bleu au lieu de vert */
+  --cb-red: #ee7733;    /* Orange au lieu de rouge */
+  --cb-yellow: #ddcc77; /* Jaune adapté */
+}
+
+.colorblind-deuteranopia .bg-green-500 {
+  background-color: #0077bb !important;
+}
+
+.colorblind-deuteranopia .bg-red-500,
+.colorblind-deuteranopia .bg-destructive {
+  background-color: #ee7733 !important;
+}
+
+.colorblind-deuteranopia .text-green-500,
+.colorblind-deuteranopia .text-green-600 {
+  color: #0077bb !important;
+}
+
+.colorblind-deuteranopia .text-red-500,
+.colorblind-deuteranopia .text-red-600 {
+  color: #ee7733 !important;
+}
+
+.colorblind-deuteranopia .bg-green-500\/10,
+.colorblind-deuteranopia .bg-green-500\/20 {
+  background-color: rgba(0, 119, 187, 0.1) !important;
+}
+
+/* Mode daltonien - Protanopie (rouge) */
+.colorblind-protanopia {
+  --cb-green: #009988;  /* Cyan-vert */
+  --cb-red: #ee9900;    /* Orange vif */
+}
+
+.colorblind-protanopia .bg-green-500 {
+  background-color: #009988 !important;
+}
+
+.colorblind-protanopia .bg-red-500,
+.colorblind-protanopia .bg-destructive {
+  background-color: #ee9900 !important;
+}
+
+.colorblind-protanopia .text-green-500,
+.colorblind-protanopia .text-green-600 {
+  color: #009988 !important;
+}
+
+.colorblind-protanopia .text-red-500,
+.colorblind-protanopia .text-red-600 {
+  color: #ee9900 !important;
+}
+
+.colorblind-protanopia .bg-green-500\/10,
+.colorblind-protanopia .bg-green-500\/20 {
+  background-color: rgba(0, 153, 136, 0.1) !important;
+}
+
+/* Mode daltonien - Tritanopie (bleu-jaune) */
+.colorblind-tritanopia {
+  --cb-blue: #cc3311;   /* Rouge foncé au lieu de bleu */
+  --cb-yellow: #ee99aa; /* Rose au lieu de jaune */
+}
+
+.colorblind-tritanopia .bg-blue-500 {
+  background-color: #cc3311 !important;
+}
+
+.colorblind-tritanopia .bg-yellow-500 {
+  background-color: #ee99aa !important;
+}
+
+.colorblind-tritanopia .text-blue-500,
+.colorblind-tritanopia .text-blue-600 {
+  color: #cc3311 !important;
+}
+
+.colorblind-tritanopia .text-yellow-500,
+.colorblind-tritanopia .text-yellow-600 {
+  color: #ee99aa !important;
+}
+
+.colorblind-tritanopia .bg-blue-500\/10,
+.colorblind-tritanopia .bg-blue-500\/20 {
+  background-color: rgba(204, 51, 17, 0.1) !important;
+}

@@ -2,13 +2,14 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, Camera, Play, Settings } from 'lucide-react';
+import { Home, Camera, Play, History, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 
 const navItems = [
   { href: '/', label: 'Accueil', icon: Home },
   { href: '/scan', label: 'Scanner', icon: Camera },
   { href: '/game', label: 'Jouer', icon: Play },
+  { href: '/history', label: 'Historique', icon: History },
   { href: '/settings', label: 'Réglages', icon: Settings },
 ];
 

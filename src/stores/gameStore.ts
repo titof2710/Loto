@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
-import type { Planche, Carton, DrawnBall, WinEvent, CartonProgress, WinType, Cell } from '@/types';
+import type { Planche, Carton, DrawnBall, WinEvent, CartonProgress, WinType, Cell, GameHistory, GameHistoryWin } from '@/types';
 
 // Fonctions de persistance avec Vercel KV
 async function savePlanchesToKV(planches: Planche[]) {
@@ -25,6 +25,57 @@ async function loadPlanchesFromKV(): Promise<Planche[]> {
     console.error('Erreur chargement KV:', error);
   }
   return [];
+}
+
+// Sauvegarder une partie dans l'historique
+async function saveGameToHistory(
+  planches: Planche[],
+  drawnBalls: DrawnBall[],
+  wins: WinEvent[],
+  startedAt: Date | null
+) {
+  if (drawnBalls.length === 0) return;
+
+  const now = new Date();
+  const duration = startedAt ? Math.round((now.getTime() - startedAt.getTime()) / 1000) : 0;
+
+  // Convertir les gains en format historique
+  const historyWins: GameHistoryWin[] = wins.map(win => {
+    const planche = planches.find(p => p.id === win.plancheId);
+    const carton = planche?.cartons.find(c => c.id === win.cartonId);
+    const ballIndex = drawnBalls.findIndex(b => b.number === win.atBallNumber);
+
+    return {
+      type: win.type,
+      cartonSerialNumber: win.serialNumber,
+      cartonPosition: win.cartonPosition || (carton?.position ?? 0) + 1,
+      plancheName: planche?.name || 'Planche inconnue',
+      atBallNumber: win.atBallNumber,
+      atBallCount: ballIndex + 1,
+    };
+  });
+
+  const gameHistory: GameHistory = {
+    id: uuidv4(),
+    date: now,
+    plancheIds: planches.map(p => p.id),
+    plancheNames: planches.map(p => p.name),
+    drawnBalls: drawnBalls.map(b => b.number),
+    totalBalls: drawnBalls.length,
+    wins: historyWins,
+    duration,
+  };
+
+  try {
+    await fetch('/api/history', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(gameHistory),
+    });
+    console.log('Partie sauvegardée dans l\'historique');
+  } catch (error) {
+    console.error('Erreur sauvegarde historique:', error);
+  }
 }
 
 interface GameStore {
@@ -252,14 +303,19 @@ export const useGameStore = create<GameStore>((set, get) => ({
     startedAt: null,
   }),
 
-  // Nouveau cadeau : efface seulement les boules et gains, garde les planches
-  clearDrawnBalls: () => set({
-    drawnBalls: [],
-    wins: [],
-    isPlaying: false,
-    voiceRecognitionEnabled: false,
-    startedAt: null,
-  }),
+  // Nouveau cadeau : sauvegarde l'historique puis efface boules et gains, garde les planches
+  clearDrawnBalls: () => {
+    const state = get();
+    // Sauvegarder dans l'historique avant de nettoyer
+    saveGameToHistory(state.planches, state.drawnBalls, state.wins, state.startedAt);
+    set({
+      drawnBalls: [],
+      wins: [],
+      isPlaying: false,
+      voiceRecognitionEnabled: false,
+      startedAt: null,
+    });
+  },
 
   // Actions boules
   drawBall: (number, source) => {

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Play, Square, RotateCcw, Mic, MicOff, Plus, Volume2, Gift } from 'lucide-react';
+import { Play, Square, RotateCcw, Mic, MicOff, Plus, Volume2, Gift, Zap, Pause, Youtube, X, Maximize2, Minimize2 } from 'lucide-react';
 import { useGameStore } from '@/stores/gameStore';
 import { NumberPad } from '@/components/game/NumberPad';
 import { DrawnBalls } from '@/components/game/DrawnBalls';
@@ -11,6 +11,23 @@ import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
 import { useAlerts } from '@/hooks/useAlerts';
 import { cn } from '@/lib/utils/cn';
 import Link from 'next/link';
+
+// Fonction pour extraire l'ID d'une vidéo YouTube
+function extractYoutubeId(url: string): string {
+  // Format: youtube.com/watch?v=ID ou youtu.be/ID ou youtube.com/live/ID
+  const patterns = [
+    /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/live\/)([a-zA-Z0-9_-]{11})/,
+    /(?:youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/,
+  ];
+
+  for (const pattern of patterns) {
+    const match = url.match(pattern);
+    if (match) return match[1];
+  }
+
+  // Si pas de match, retourner l'URL telle quelle (peut être un ID direct)
+  return url.length === 11 ? url : '';
+}
 
 export default function GamePage() {
   const {
@@ -33,6 +50,15 @@ export default function GamePage() {
   const [viewMode, setViewMode] = useState<'keyboard' | 'cartons'>('keyboard');
   const [lastVoiceNumber, setLastVoiceNumber] = useState<number | null>(null);
   const lastWinsCountRef = useRef(0);
+  const [isSimulating, setIsSimulating] = useState(false);
+  const [simulationSpeed, setSimulationSpeed] = useState<'slow' | 'fast'>('slow');
+  const simulationRef = useRef<NodeJS.Timeout | null>(null);
+  const [showYoutube, setShowYoutube] = useState(false);
+  const [youtubeMinimized, setYoutubeMinimized] = useState(false);
+  const [youtubeUrl, setYoutubeUrl] = useState('');
+
+  // URL du stream Loto Fiesta (à personnaliser)
+  const LOTO_FIESTA_CHANNEL = 'https://www.youtube.com/@LotoFiesta/live';
 
   // Alertes (sons + vibrations)
   const { alertWin, alertBallDrawn, checkAndAlertProgress } = useAlerts();
@@ -97,6 +123,64 @@ export default function GamePage() {
   }, [isPlaying, cartonsProgress, checkAndAlertProgress]);
 
   const drawnNumbers = drawnBalls.map((b) => b.number);
+
+  // Fonction de simulation
+  const startSimulation = useCallback(() => {
+    if (!isPlaying) {
+      startGame();
+    }
+    setIsSimulating(true);
+  }, [isPlaying, startGame]);
+
+  const stopSimulation = useCallback(() => {
+    setIsSimulating(false);
+    if (simulationRef.current) {
+      clearTimeout(simulationRef.current);
+      simulationRef.current = null;
+    }
+  }, []);
+
+  // Effet de simulation
+  useEffect(() => {
+    if (!isSimulating || !isPlaying) {
+      if (simulationRef.current) {
+        clearTimeout(simulationRef.current);
+        simulationRef.current = null;
+      }
+      return;
+    }
+
+    // Trouver les numéros non tirés
+    const availableNumbers = Array.from({ length: 90 }, (_, i) => i + 1)
+      .filter(n => !drawnNumbers.includes(n));
+
+    if (availableNumbers.length === 0) {
+      setIsSimulating(false);
+      return;
+    }
+
+    // Tirer un numéro aléatoire
+    const delay = simulationSpeed === 'slow' ? 1500 : 300;
+    simulationRef.current = setTimeout(() => {
+      const randomIndex = Math.floor(Math.random() * availableNumbers.length);
+      const randomNumber = availableNumbers[randomIndex];
+      drawBall(randomNumber, 'manual');
+      alertBallDrawn();
+    }, delay);
+
+    return () => {
+      if (simulationRef.current) {
+        clearTimeout(simulationRef.current);
+      }
+    };
+  }, [isSimulating, isPlaying, drawnNumbers, simulationSpeed, drawBall, alertBallDrawn]);
+
+  // Nettoyer la simulation quand le jeu est arrêté
+  useEffect(() => {
+    if (!isPlaying && isSimulating) {
+      setIsSimulating(false);
+    }
+  }, [isPlaying, isSimulating]);
 
   // Pas de planches
   if (planches.length === 0) {
@@ -194,7 +278,159 @@ export default function GamePage() {
             )}
           </button>
         )}
+
+        {/* Bouton simulation */}
+        <button
+          onClick={isSimulating ? stopSimulation : startSimulation}
+          className={cn(
+            'p-3 rounded-lg transition-colors relative',
+            isSimulating
+              ? 'bg-amber-500 text-white'
+              : 'bg-[var(--muted)] text-[var(--muted-foreground)]'
+          )}
+          title={isSimulating ? 'Arrêter la simulation' : 'Simulation aléatoire'}
+        >
+          {isSimulating ? (
+            <Pause className="w-5 h-5" />
+          ) : (
+            <Zap className="w-5 h-5" />
+          )}
+          {isSimulating && (
+            <span className="absolute -top-1 -right-1 w-3 h-3 bg-amber-300 rounded-full animate-pulse" />
+          )}
+        </button>
+
+        {/* Bouton YouTube */}
+        <button
+          onClick={() => setShowYoutube(!showYoutube)}
+          className={cn(
+            'p-3 rounded-lg transition-colors',
+            showYoutube
+              ? 'bg-red-500 text-white'
+              : 'bg-[var(--muted)] text-[var(--muted-foreground)]'
+          )}
+          title="Stream YouTube"
+        >
+          <Youtube className="w-5 h-5" />
+        </button>
       </div>
+
+      {/* Contrôle vitesse simulation */}
+      {isSimulating && (
+        <div className="flex items-center gap-2 p-2 bg-amber-500/10 border border-amber-500/30 rounded-lg">
+          <Zap className="w-4 h-4 text-amber-500" />
+          <span className="text-sm text-amber-600 dark:text-amber-400">Simulation en cours</span>
+          <div className="flex-1" />
+          <button
+            onClick={() => setSimulationSpeed(simulationSpeed === 'slow' ? 'fast' : 'slow')}
+            className={cn(
+              'px-3 py-1 rounded text-xs font-medium',
+              simulationSpeed === 'fast'
+                ? 'bg-amber-500 text-white'
+                : 'bg-amber-500/20 text-amber-600'
+            )}
+          >
+            {simulationSpeed === 'slow' ? 'Lent' : 'Rapide'}
+          </button>
+        </div>
+      )}
+
+      {/* Lecteur YouTube */}
+      {showYoutube && (
+        <div className={cn(
+          'bg-[var(--card)] rounded-xl border border-[var(--border)] overflow-hidden',
+          youtubeMinimized ? 'fixed bottom-24 right-4 w-40 z-40 shadow-lg' : ''
+        )}>
+          <div className="flex items-center justify-between p-2 bg-red-500 text-white">
+            <div className="flex items-center gap-2">
+              <Youtube className="w-4 h-4" />
+              <span className="text-sm font-medium">Loto Fiesta</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setYoutubeMinimized(!youtubeMinimized)}
+                className="p-1 hover:bg-white/20 rounded"
+              >
+                {youtubeMinimized ? (
+                  <Maximize2 className="w-4 h-4" />
+                ) : (
+                  <Minimize2 className="w-4 h-4" />
+                )}
+              </button>
+              <button
+                onClick={() => setShowYoutube(false)}
+                className="p-1 hover:bg-white/20 rounded"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {!youtubeMinimized && !youtubeUrl && (
+            <div className="p-4 space-y-3">
+              <p className="text-sm text-[var(--muted-foreground)]">
+                Entrez l'URL du stream YouTube ou d'une vidéo :
+              </p>
+              <input
+                type="text"
+                placeholder="https://youtube.com/watch?v=..."
+                className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--background)] text-sm"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    const input = e.currentTarget.value;
+                    if (input.includes('youtube.com') || input.includes('youtu.be')) {
+                      setYoutubeUrl(input);
+                    }
+                  }
+                }}
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    const input = document.querySelector('input[placeholder*="youtube"]') as HTMLInputElement;
+                    if (input?.value) {
+                      setYoutubeUrl(input.value);
+                    }
+                  }}
+                  className="flex-1 py-2 bg-red-500 text-white rounded-lg text-sm font-medium"
+                >
+                  Charger
+                </button>
+                <a
+                  href={LOTO_FIESTA_CHANNEL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-4 py-2 bg-[var(--muted)] rounded-lg text-sm"
+                >
+                  Ouvrir chaîne
+                </a>
+              </div>
+            </div>
+          )}
+
+          {youtubeUrl && (
+            <div className={cn(
+              'relative bg-black',
+              youtubeMinimized ? 'aspect-video' : 'aspect-video'
+            )}>
+              <iframe
+                src={`https://www.youtube.com/embed/${extractYoutubeId(youtubeUrl)}?autoplay=1`}
+                className="absolute inset-0 w-full h-full"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+              />
+              {!youtubeMinimized && (
+                <button
+                  onClick={() => setYoutubeUrl('')}
+                  className="absolute top-2 right-2 p-1 bg-black/50 text-white rounded hover:bg-black/70"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Indicateur reconnaissance vocale */}
       {voiceRecognitionEnabled && isListening && (

@@ -31,7 +31,7 @@ export function NumberPad({ drawnNumbers, onNumberSelect, onUndo, disabled }: Nu
                 isDrawn
                   ? isLast
                     ? 'bg-green-500 text-white ring-2 ring-green-300'
-                    : 'bg-[var(--muted)] text-[var(--muted-foreground)] opacity-50'
+                    : 'bg-blue-500 text-white'
                   : 'bg-[var(--card)] border border-[var(--border)] hover:bg-[var(--primary)] hover:text-white hover:border-[var(--primary)] active:scale-95'
               )}
             >
