@@ -3,14 +3,25 @@
 import { useEffect } from 'react';
 import { useGameStore } from '@/stores/gameStore';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { useAuthStore } from '@/stores/authStore';
 
 export function StoreProvider({ children }: { children: React.ReactNode }) {
   const loadPlanches = useGameStore((state) => state.loadPlanches);
   const colorBlindMode = useSettingsStore((state) => state.colorBlindMode);
+  const checkAuth = useAuthStore((state) => state.checkAuth);
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
 
+  // Vérifier l'auth au montage
   useEffect(() => {
-    loadPlanches();
-  }, [loadPlanches]);
+    checkAuth();
+  }, [checkAuth]);
+
+  // Charger les planches une fois authentifié
+  useEffect(() => {
+    if (isAuthenticated) {
+      loadPlanches();
+    }
+  }, [isAuthenticated, loadPlanches]);
 
   // Appliquer le mode daltonien sur le body
   useEffect(() => {

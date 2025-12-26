@@ -1,15 +1,24 @@
 import { Redis } from '@upstash/redis';
 import { NextResponse } from 'next/server';
 import type { GameHistory, GlobalStats } from '@/types';
+import { getSession } from '@/lib/auth/session';
 
 const redis = Redis.fromEnv();
-const HISTORY_KEY = 'loto:history';
-const STATS_KEY = 'loto:stats';
 
-// GET - Récupérer l'historique des parties
+// Clés Redis préfixées par userId
+const getUserHistoryKey = (userId: string) => `loto:${userId}:history`;
+const getUserStatsKey = (userId: string) => `loto:${userId}:stats`;
+
+// GET - Récupérer l'historique des parties de l'utilisateur
 export async function GET() {
   try {
-    const history = await redis.get<GameHistory[]>(HISTORY_KEY);
+    const session = await getSession();
+    if (!session) {
+      return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
+    }
+
+    const key = getUserHistoryKey(session.userId);
+    const history = await redis.get<GameHistory[]>(key);
     return NextResponse.json(history || []);
   } catch (error) {
     console.error('Erreur récupération historique:', error);
@@ -17,13 +26,19 @@ export async function GET() {
   }
 }
 
-// POST - Ajouter une partie à l'historique
+// POST - Ajouter une partie à l'historique de l'utilisateur
 export async function POST(request: Request) {
   try {
+    const session = await getSession();
+    if (!session) {
+      return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
+    }
+
     const game: GameHistory = await request.json();
+    const historyKey = getUserHistoryKey(session.userId);
 
     // Récupérer l'historique existant
-    const history = await redis.get<GameHistory[]>(HISTORY_KEY) || [];
+    const history = await redis.get<GameHistory[]>(historyKey) || [];
 
     // Ajouter la nouvelle partie au début
     history.unshift(game);
@@ -33,10 +48,10 @@ export async function POST(request: Request) {
       history.splice(100);
     }
 
-    await redis.set(HISTORY_KEY, history);
+    await redis.set(historyKey, history);
 
-    // Mettre à jour les statistiques globales
-    await updateStats(game);
+    // Mettre à jour les statistiques de l'utilisateur
+    await updateStats(session.userId, game);
 
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -45,11 +60,19 @@ export async function POST(request: Request) {
   }
 }
 
-// DELETE - Supprimer tout l'historique
+// DELETE - Supprimer tout l'historique de l'utilisateur
 export async function DELETE() {
   try {
-    await redis.del(HISTORY_KEY);
-    await redis.del(STATS_KEY);
+    const session = await getSession();
+    if (!session) {
+      return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
+    }
+
+    const historyKey = getUserHistoryKey(session.userId);
+    const statsKey = getUserStatsKey(session.userId);
+
+    await redis.del(historyKey);
+    await redis.del(statsKey);
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Erreur suppression historique:', error);
@@ -57,10 +80,11 @@ export async function DELETE() {
   }
 }
 
-// Fonction pour mettre à jour les statistiques
-async function updateStats(game: GameHistory) {
+// Fonction pour mettre à jour les statistiques de l'utilisateur
+async function updateStats(userId: string, game: GameHistory) {
   try {
-    const stats = await redis.get<GlobalStats>(STATS_KEY) || {
+    const statsKey = getUserStatsKey(userId);
+    const stats = await redis.get<GlobalStats>(statsKey) || {
       totalGames: 0,
       totalQuines: 0,
       totalDoubleQuines: 0,
@@ -119,7 +143,7 @@ async function updateStats(game: GameHistory) {
       stats.numberFrequency[ball] = (stats.numberFrequency[ball] || 0) + 1;
     }
 
-    await redis.set(STATS_KEY, stats);
+    await redis.set(statsKey, stats);
   } catch (error) {
     console.error('Erreur mise à jour stats:', error);
   }

@@ -1,14 +1,23 @@
 import { Redis } from '@upstash/redis';
 import { NextResponse } from 'next/server';
 import type { GlobalStats } from '@/types';
+import { getSession } from '@/lib/auth/session';
 
 const redis = Redis.fromEnv();
-const STATS_KEY = 'loto:stats';
 
-// GET - Récupérer les statistiques globales
+// Clé Redis préfixée par userId
+const getUserStatsKey = (userId: string) => `loto:${userId}:stats`;
+
+// GET - Récupérer les statistiques de l'utilisateur
 export async function GET() {
   try {
-    const stats = await redis.get<GlobalStats>(STATS_KEY);
+    const session = await getSession();
+    if (!session) {
+      return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
+    }
+
+    const key = getUserStatsKey(session.userId);
+    const stats = await redis.get<GlobalStats>(key);
     return NextResponse.json(stats || {
       totalGames: 0,
       totalQuines: 0,
