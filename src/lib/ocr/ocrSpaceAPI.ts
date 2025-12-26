@@ -22,12 +22,13 @@ const FREE_API_KEY = 'K82030734288957';
 
 /**
  * Extrait les numéros d'une image via OCR.space API
- * Utilise Engine 2 qui est meilleur pour les chiffres
+ * @param engine 1 = meilleur pour documents, 2 = meilleur pour chiffres isolés
  */
 export async function extractNumbersWithOCRSpace(
   imageSource: string | File,
   onProgress?: (progress: number) => void,
-  usePreprocessing: boolean = true
+  usePreprocessing: boolean = true,
+  engine: 1 | 2 = 1
 ): Promise<OCRSpaceResult> {
   try {
     onProgress?.(0.1);
@@ -53,9 +54,10 @@ export async function extractNumbersWithOCRSpace(
     formData.append('base64Image', base64Image);
     formData.append('language', 'eng');
     formData.append('isOverlayRequired', 'false');
-    formData.append('OCREngine', '2'); // Engine 2 est meilleur pour les chiffres
+    formData.append('OCREngine', String(engine)); // Engine 1 = documents, Engine 2 = chiffres
     formData.append('scale', 'true'); // Améliore la reconnaissance
     formData.append('isTable', 'true'); // Indique que c'est un tableau
+    formData.append('detectOrientation', 'true'); // Détecter l'orientation
 
     onProgress?.(0.5);
 
@@ -281,121 +283,106 @@ export async function extractNumbersFromCartonOCRSpace(
   onProgress?: (progress: number) => void
 ): Promise<OCRSpaceResult> {
   try {
-    // 1. D'abord essayer l'OCR avec pré-traitement sur l'image entière
-    console.log('OCR.space: Essai 1 - image entière avec pré-traitement');
-    const result1 = await extractNumbersWithOCRSpace(imageSource, (p) => onProgress?.(p * 0.3), true);
-    console.log(`Essai 1: ${result1.numbers.length} numéros trouvés:`, result1.numbers);
+    const allNumbers: number[] = [];
+    let serialNumber: string | undefined;
+    let rawTexts: string[] = [];
 
-    // Si on a trouvé 15 numéros, parfait
-    if (result1.numbers.length >= 15) {
-      return result1;
+    // 1. Essayer Engine 1 (meilleur pour les documents/tableaux) avec pré-traitement
+    console.log('OCR.space: Essai 1 - Engine 1 avec pré-traitement');
+    const result1 = await extractNumbersWithOCRSpace(imageSource, (p) => onProgress?.(p * 0.2), true, 1);
+    console.log(`Essai 1 (Engine 1): ${result1.numbers.length} numéros:`, result1.numbers);
+    rawTexts.push(result1.rawText);
+    serialNumber = result1.serialNumber;
+    for (const num of result1.numbers) {
+      if (!allNumbers.includes(num)) allNumbers.push(num);
     }
 
-    // 2. Essayer sans pré-traitement si on n'a pas assez
-    if (result1.numbers.length < 12) {
-      console.log('OCR.space: Essai 2 - image entière sans pré-traitement');
-      const result2 = await extractNumbersWithOCRSpace(imageSource, (p) => onProgress?.(0.3 + p * 0.2), false);
-      console.log(`Essai 2: ${result2.numbers.length} numéros trouvés:`, result2.numbers);
-
-      // Fusionner les résultats
-      const mergedNumbers = [...result1.numbers];
-      for (const num of result2.numbers) {
-        if (!mergedNumbers.includes(num)) {
-          mergedNumbers.push(num);
-        }
-      }
-
-      if (mergedNumbers.length >= 15) {
-        return {
-          numbers: mergedNumbers.sort((a, b) => a - b).slice(0, 15),
-          confidence: 95,
-          rawText: result1.rawText + ' | ' + result2.rawText,
-          serialNumber: result1.serialNumber || result2.serialNumber,
-        };
-      }
-
-      // Continuer avec le meilleur résultat
-      if (mergedNumbers.length > result1.numbers.length) {
-        result1.numbers = mergedNumbers;
-      }
+    if (allNumbers.length >= 15) {
+      return { numbers: allNumbers.sort((a, b) => a - b).slice(0, 15), confidence: 95, rawText: rawTexts.join(' | '), serialNumber };
     }
 
-    // 3. Si toujours pas assez, essayer cellule par cellule
-    if (result1.numbers.length < 12) {
-      console.log('OCR.space: Essai 3 - cellule par cellule');
+    // 2. Essayer Engine 2 (meilleur pour les chiffres) avec pré-traitement
+    console.log('OCR.space: Essai 2 - Engine 2 avec pré-traitement');
+    const result2 = await extractNumbersWithOCRSpace(imageSource, (p) => onProgress?.(0.2 + p * 0.2), true, 2);
+    console.log(`Essai 2 (Engine 2): ${result2.numbers.length} numéros:`, result2.numbers);
+    rawTexts.push(result2.rawText);
+    if (!serialNumber) serialNumber = result2.serialNumber;
+    for (const num of result2.numbers) {
+      if (!allNumbers.includes(num)) allNumbers.push(num);
+    }
+
+    if (allNumbers.length >= 15) {
+      return { numbers: allNumbers.sort((a, b) => a - b).slice(0, 15), confidence: 95, rawText: rawTexts.join(' | '), serialNumber };
+    }
+
+    // 3. Essayer sans pré-traitement avec Engine 1
+    console.log('OCR.space: Essai 3 - Engine 1 sans pré-traitement');
+    const result3 = await extractNumbersWithOCRSpace(imageSource, (p) => onProgress?.(0.4 + p * 0.2), false, 1);
+    console.log(`Essai 3 (Engine 1 brut): ${result3.numbers.length} numéros:`, result3.numbers);
+    rawTexts.push(result3.rawText);
+    if (!serialNumber) serialNumber = result3.serialNumber;
+    for (const num of result3.numbers) {
+      if (!allNumbers.includes(num)) allNumbers.push(num);
+    }
+
+    if (allNumbers.length >= 15) {
+      return { numbers: allNumbers.sort((a, b) => a - b).slice(0, 15), confidence: 95, rawText: rawTexts.join(' | '), serialNumber };
+    }
+
+    // 4. Essayer ligne par ligne si pas assez de numéros
+    if (allNumbers.length < 12) {
+      console.log('OCR.space: Essai 4 - ligne par ligne');
 
       const canvas = await loadImageToCanvas(imageSource);
       const width = canvas.width;
       const height = canvas.height;
 
-      const cellWidth = width / 9;
-      const cellHeight = height / 3;
-
-      const numbers = [...result1.numbers];
-      let processedCells = 0;
-      const totalCells = 27;
-
+      // Découper en 3 lignes
       for (let row = 0; row < 3; row++) {
-        for (let col = 0; col < 9; col++) {
-          // Extraire la cellule avec une marge
-          const margin = 2;
-          const cellCanvas = document.createElement('canvas');
-          const cw = Math.floor(cellWidth) + margin * 2;
-          const ch = Math.floor(cellHeight) + margin * 2;
-          cellCanvas.width = cw;
-          cellCanvas.height = ch;
+        const rowCanvas = document.createElement('canvas');
+        const rowHeight = height / 3;
+        rowCanvas.width = width;
+        rowCanvas.height = Math.floor(rowHeight);
 
-          const cellCtx = cellCanvas.getContext('2d');
-          if (!cellCtx) continue;
+        const ctx = rowCanvas.getContext('2d');
+        if (!ctx) continue;
 
-          // Fond blanc
-          cellCtx.fillStyle = 'white';
-          cellCtx.fillRect(0, 0, cw, ch);
+        // Fond blanc
+        ctx.fillStyle = 'white';
+        ctx.fillRect(0, 0, rowCanvas.width, rowCanvas.height);
 
-          // Copier la cellule
-          const srcX = Math.max(0, col * cellWidth - margin);
-          const srcY = Math.max(0, row * cellHeight - margin);
-          const srcW = Math.min(cellWidth + margin * 2, width - srcX);
-          const srcH = Math.min(cellHeight + margin * 2, height - srcY);
+        // Copier la ligne
+        ctx.drawImage(
+          canvas,
+          0, row * rowHeight, width, rowHeight,
+          0, 0, width, rowHeight
+        );
 
-          cellCtx.drawImage(
-            canvas,
-            srcX, srcY, srcW, srcH,
-            0, 0, cw, ch
-          );
+        // OCR sur la ligne avec Engine 1
+        const lineResult = await extractNumbersWithOCRSpace(
+          rowCanvas.toDataURL('image/png'),
+          undefined,
+          false,
+          1
+        );
 
-          // Vérifier si la cellule a du contenu
-          const imageData = cellCtx.getImageData(0, 0, cw, ch);
-          if (checkCellHasContent(imageData)) {
-            // OCR sur cette cellule (sans pré-traitement car déjà petite)
-            const cellResult = await extractNumbersWithOCRSpace(
-              cellCanvas.toDataURL('image/png'),
-              undefined,
-              false
-            );
-
-            for (const num of cellResult.numbers) {
-              if (!numbers.includes(num) && numbers.length < 15) {
-                numbers.push(num);
-                console.log(`Cellule [${row},${col}]: trouvé ${num}`);
-              }
-            }
+        console.log(`Ligne ${row + 1}: ${lineResult.numbers.length} numéros:`, lineResult.numbers);
+        for (const num of lineResult.numbers) {
+          if (!allNumbers.includes(num) && allNumbers.length < 15) {
+            allNumbers.push(num);
           }
-
-          processedCells++;
-          onProgress?.(0.5 + (processedCells / totalCells) * 0.5);
         }
-      }
 
-      return {
-        numbers: numbers.sort((a, b) => a - b),
-        confidence: numbers.length === 15 ? 95 : (numbers.length / 15) * 100,
-        rawText: result1.rawText,
-        serialNumber: result1.serialNumber,
-      };
+        onProgress?.(0.6 + ((row + 1) / 3) * 0.4);
+      }
     }
 
-    return result1;
+    return {
+      numbers: allNumbers.sort((a, b) => a - b).slice(0, 15),
+      confidence: allNumbers.length === 15 ? 95 : (allNumbers.length / 15) * 100,
+      rawText: rawTexts.join(' | '),
+      serialNumber,
+    };
   } catch (error) {
     console.error('OCR.space carton error:', error);
     return {
