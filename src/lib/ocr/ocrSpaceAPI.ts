@@ -26,15 +26,18 @@ const FREE_API_KEY = 'K82030734288957';
  */
 export async function extractNumbersWithOCRSpace(
   imageSource: string | File,
-  onProgress?: (progress: number) => void
+  onProgress?: (progress: number) => void,
+  usePreprocessing: boolean = true
 ): Promise<OCRSpaceResult> {
   try {
     onProgress?.(0.1);
 
-    // Convertir l'image en base64 si nécessaire
+    // Pré-traiter l'image pour améliorer l'OCR
     let base64Image: string;
 
-    if (imageSource instanceof File) {
+    if (usePreprocessing) {
+      base64Image = await preprocessImage(imageSource);
+    } else if (imageSource instanceof File) {
       base64Image = await fileToBase64(imageSource);
     } else if (imageSource.startsWith('data:')) {
       base64Image = imageSource;
@@ -213,88 +216,193 @@ async function urlToBase64(url: string): Promise<string> {
 }
 
 /**
+ * Pré-traitement d'une image pour améliorer l'OCR
+ * - Augmente le contraste
+ * - Binarise (noir et blanc)
+ * - Agrandit l'image pour une meilleure reconnaissance
+ */
+async function preprocessImage(imageSource: string | File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+
+    img.onload = () => {
+      // Agrandir l'image 2x pour une meilleure OCR
+      const scale = 2;
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width * scale;
+      canvas.height = img.height * scale;
+
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        reject(new Error('Could not get canvas context'));
+        return;
+      }
+
+      // Dessiner l'image agrandie
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+      // Obtenir les données de pixels
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const data = imageData.data;
+
+      // Binarisation avec seuil adaptatif
+      for (let i = 0; i < data.length; i += 4) {
+        const r = data[i];
+        const g = data[i + 1];
+        const b = data[i + 2];
+
+        // Calcul de la luminosité
+        const brightness = 0.299 * r + 0.587 * g + 0.114 * b;
+
+        // Seuil de binarisation - les chiffres noirs sur fond clair/coloré
+        const threshold = 140;
+        const value = brightness < threshold ? 0 : 255;
+
+        data[i] = value;     // R
+        data[i + 1] = value; // G
+        data[i + 2] = value; // B
+        // Alpha reste inchangé
+      }
+
+      ctx.putImageData(imageData, 0, 0);
+      resolve(canvas.toDataURL('image/png'));
+    };
+
+    img.onerror = () => reject(new Error('Failed to load image for preprocessing'));
+
+    if (imageSource instanceof File) {
+      img.src = URL.createObjectURL(imageSource);
+    } else {
+      img.src = imageSource;
+    }
+  });
+}
+
+/**
  * Traite un carton individuel avec OCR.space
- * Découpe en cellules 3x9 et envoie chaque cellule à l'API
+ * Essaie plusieurs approches pour maximiser la reconnaissance
  */
 export async function extractNumbersFromCartonOCRSpace(
   imageSource: string | File,
   onProgress?: (progress: number) => void
 ): Promise<OCRSpaceResult> {
   try {
-    // D'abord essayer l'OCR sur l'image entière
-    const result = await extractNumbersWithOCRSpace(imageSource, onProgress);
+    // 1. D'abord essayer l'OCR avec pré-traitement sur l'image entière
+    console.log('OCR.space: Essai 1 - image entière avec pré-traitement');
+    const result1 = await extractNumbersWithOCRSpace(imageSource, (p) => onProgress?.(p * 0.3), true);
+    console.log(`Essai 1: ${result1.numbers.length} numéros trouvés:`, result1.numbers);
 
-    // Si on a trouvé suffisamment de numéros, retourner
-    if (result.numbers.length >= 10) {
-      return result;
+    // Si on a trouvé 15 numéros, parfait
+    if (result1.numbers.length >= 15) {
+      return result1;
     }
 
-    // Sinon, essayer cellule par cellule
-    console.log('OCR.space: pas assez de numéros, essai cellule par cellule...');
+    // 2. Essayer sans pré-traitement si on n'a pas assez
+    if (result1.numbers.length < 12) {
+      console.log('OCR.space: Essai 2 - image entière sans pré-traitement');
+      const result2 = await extractNumbersWithOCRSpace(imageSource, (p) => onProgress?.(0.3 + p * 0.2), false);
+      console.log(`Essai 2: ${result2.numbers.length} numéros trouvés:`, result2.numbers);
 
-    const canvas = await loadImageToCanvas(imageSource);
-    const width = canvas.width;
-    const height = canvas.height;
-
-    const cellWidth = width / 9;
-    const cellHeight = height / 3;
-
-    const numbers: number[] = [];
-    let processedCells = 0;
-    const totalCells = 27;
-
-    for (let row = 0; row < 3; row++) {
-      for (let col = 0; col < 9; col++) {
-        // Extraire la cellule
-        const cellCanvas = document.createElement('canvas');
-        cellCanvas.width = Math.floor(cellWidth);
-        cellCanvas.height = Math.floor(cellHeight);
-
-        const cellCtx = cellCanvas.getContext('2d');
-        if (!cellCtx) continue;
-
-        // Fond blanc
-        cellCtx.fillStyle = 'white';
-        cellCtx.fillRect(0, 0, cellCanvas.width, cellCanvas.height);
-
-        // Copier la cellule
-        cellCtx.drawImage(
-          canvas,
-          col * cellWidth,
-          row * cellHeight,
-          cellWidth,
-          cellHeight,
-          0,
-          0,
-          cellCanvas.width,
-          cellCanvas.height
-        );
-
-        // Vérifier si la cellule a du contenu
-        const imageData = cellCtx.getImageData(0, 0, cellCanvas.width, cellCanvas.height);
-        if (checkCellHasContent(imageData)) {
-          // OCR sur cette cellule
-          const cellResult = await extractNumbersWithOCRSpace(
-            cellCanvas.toDataURL('image/png')
-          );
-
-          for (const num of cellResult.numbers) {
-            if (!numbers.includes(num)) {
-              numbers.push(num);
-            }
-          }
+      // Fusionner les résultats
+      const mergedNumbers = [...result1.numbers];
+      for (const num of result2.numbers) {
+        if (!mergedNumbers.includes(num)) {
+          mergedNumbers.push(num);
         }
+      }
 
-        processedCells++;
-        onProgress?.(processedCells / totalCells);
+      if (mergedNumbers.length >= 15) {
+        return {
+          numbers: mergedNumbers.sort((a, b) => a - b).slice(0, 15),
+          confidence: 95,
+          rawText: result1.rawText + ' | ' + result2.rawText,
+          serialNumber: result1.serialNumber || result2.serialNumber,
+        };
+      }
+
+      // Continuer avec le meilleur résultat
+      if (mergedNumbers.length > result1.numbers.length) {
+        result1.numbers = mergedNumbers;
       }
     }
 
-    return {
-      numbers: numbers.sort((a, b) => a - b),
-      confidence: numbers.length === 15 ? 95 : (numbers.length / 15) * 100,
-      rawText: numbers.join(' '),
-    };
+    // 3. Si toujours pas assez, essayer cellule par cellule
+    if (result1.numbers.length < 12) {
+      console.log('OCR.space: Essai 3 - cellule par cellule');
+
+      const canvas = await loadImageToCanvas(imageSource);
+      const width = canvas.width;
+      const height = canvas.height;
+
+      const cellWidth = width / 9;
+      const cellHeight = height / 3;
+
+      const numbers = [...result1.numbers];
+      let processedCells = 0;
+      const totalCells = 27;
+
+      for (let row = 0; row < 3; row++) {
+        for (let col = 0; col < 9; col++) {
+          // Extraire la cellule avec une marge
+          const margin = 2;
+          const cellCanvas = document.createElement('canvas');
+          const cw = Math.floor(cellWidth) + margin * 2;
+          const ch = Math.floor(cellHeight) + margin * 2;
+          cellCanvas.width = cw;
+          cellCanvas.height = ch;
+
+          const cellCtx = cellCanvas.getContext('2d');
+          if (!cellCtx) continue;
+
+          // Fond blanc
+          cellCtx.fillStyle = 'white';
+          cellCtx.fillRect(0, 0, cw, ch);
+
+          // Copier la cellule
+          const srcX = Math.max(0, col * cellWidth - margin);
+          const srcY = Math.max(0, row * cellHeight - margin);
+          const srcW = Math.min(cellWidth + margin * 2, width - srcX);
+          const srcH = Math.min(cellHeight + margin * 2, height - srcY);
+
+          cellCtx.drawImage(
+            canvas,
+            srcX, srcY, srcW, srcH,
+            0, 0, cw, ch
+          );
+
+          // Vérifier si la cellule a du contenu
+          const imageData = cellCtx.getImageData(0, 0, cw, ch);
+          if (checkCellHasContent(imageData)) {
+            // OCR sur cette cellule (sans pré-traitement car déjà petite)
+            const cellResult = await extractNumbersWithOCRSpace(
+              cellCanvas.toDataURL('image/png'),
+              undefined,
+              false
+            );
+
+            for (const num of cellResult.numbers) {
+              if (!numbers.includes(num) && numbers.length < 15) {
+                numbers.push(num);
+                console.log(`Cellule [${row},${col}]: trouvé ${num}`);
+              }
+            }
+          }
+
+          processedCells++;
+          onProgress?.(0.5 + (processedCells / totalCells) * 0.5);
+        }
+      }
+
+      return {
+        numbers: numbers.sort((a, b) => a - b),
+        confidence: numbers.length === 15 ? 95 : (numbers.length / 15) * 100,
+        rawText: result1.rawText,
+        serialNumber: result1.serialNumber,
+      };
+    }
+
+    return result1;
   } catch (error) {
     console.error('OCR.space carton error:', error);
     return {

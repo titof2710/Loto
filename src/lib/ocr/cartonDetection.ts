@@ -617,22 +617,24 @@ export async function detectCartons(source: File | string): Promise<DetectedCart
     const y = topY + row * cartonHeight;
     const h = cartonHeight;
 
-    // Marge pour éviter les bordures noires
-    const marginY = h * 0.03;
+    // Marges plus importantes pour éviter les bordures noires
+    // et ne garder que la zone des numéros
+    const marginY = h * 0.08; // 8% de marge verticale
+    const marginXInner = (leftColEnd - leftColStart) * 0.03; // 3% de marge horizontale
 
     // Colonne gauche
     rectangles.push({
-      x: leftColStart,
+      x: leftColStart + marginXInner,
       y: y + marginY,
-      width: leftColEnd - leftColStart,
+      width: leftColEnd - leftColStart - marginXInner * 2,
       height: h - marginY * 2,
     });
 
     // Colonne droite
     rectangles.push({
-      x: rightColStart,
+      x: rightColStart + marginXInner,
       y: y + marginY,
-      width: rightColEnd - rightColStart,
+      width: rightColEnd - rightColStart - marginXInner * 2,
       height: h - marginY * 2,
     });
   }
