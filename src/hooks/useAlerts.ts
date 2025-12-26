@@ -4,13 +4,13 @@ import { useCallback, useEffect, useRef } from 'react';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { playSound, playWinSound, preloadSounds } from '@/lib/utils/sounds';
 import { vibrate, vibrateForWin, vibrateAlert, vibrationPatterns } from '@/lib/utils/vibration';
-import type { WinType, CartonProgress } from '@/types';
+import type { WinType, CartonProgress, PrizeType } from '@/types';
 
 interface UseAlertsResult {
   alertWin: (winType: WinType) => void;
   alertOneRemaining: () => void;
   alertBallDrawn: () => void;
-  checkAndAlertProgress: (progress: CartonProgress[]) => void;
+  checkAndAlertProgress: (progress: CartonProgress[], currentPrizeType?: PrizeType) => void;
 }
 
 export function useAlerts(): UseAlertsResult {
@@ -44,12 +44,12 @@ export function useAlerts(): UseAlertsResult {
   }, [soundEnabled, vibrationEnabled]);
 
   const checkAndAlertProgress = useCallback(
-    (progress: CartonProgress[]) => {
+    (progress: CartonProgress[], currentPrizeType?: PrizeType) => {
       if (!alertsEnabled) return;
 
       for (const p of progress) {
-        // Alerte "plus qu'un pour la quine"
-        if (p.missingForQuine.length === 1) {
+        // Alerte "plus qu'un pour la quine" - seulement si on joue pour la Quine
+        if (currentPrizeType === 'Q' && p.missingForQuine.length === 1) {
           const key = `quine-${p.cartonId}-${p.missingForQuine[0]}`;
           if (!lastAlertedRef.current.has(key)) {
             lastAlertedRef.current.add(key);
@@ -57,8 +57,17 @@ export function useAlerts(): UseAlertsResult {
           }
         }
 
-        // Alerte "plus qu'un pour le carton plein"
-        if (p.missingForCartonPlein.length === 1) {
+        // Alerte "plus qu'un pour la double quine" - seulement si on joue pour la DQ
+        if (currentPrizeType === 'DQ' && p.missingForDoubleQuine.length === 1) {
+          const key = `dq-${p.cartonId}-${p.missingForDoubleQuine[0]}`;
+          if (!lastAlertedRef.current.has(key)) {
+            lastAlertedRef.current.add(key);
+            alertOneRemaining();
+          }
+        }
+
+        // Alerte "plus qu'un pour le carton plein" - seulement si on joue pour le CP
+        if (currentPrizeType === 'CP' && p.missingForCartonPlein.length === 1) {
           const key = `plein-${p.cartonId}-${p.missingForCartonPlein[0]}`;
           if (!lastAlertedRef.current.has(key)) {
             lastAlertedRef.current.add(key);

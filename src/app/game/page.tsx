@@ -36,6 +36,7 @@ export default function GamePage() {
   const {
     allTirages,
     currentTirage,
+    currentTypeInGroup,
     isLoading: tirageLoading,
     isPrizesLoading,
     loadTirages,
@@ -146,9 +147,9 @@ export default function GamePage() {
 
   useEffect(() => {
     if (isPlaying) {
-      checkAndAlertProgress(cartonsProgress);
+      checkAndAlertProgress(cartonsProgress, currentTypeInGroup);
     }
-  }, [isPlaying, cartonsProgress, checkAndAlertProgress]);
+  }, [isPlaying, cartonsProgress, checkAndAlertProgress, currentTypeInGroup]);
 
   const drawnNumbers = drawnBalls.map((b) => b.number);
 
