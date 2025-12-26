@@ -15,23 +15,6 @@ import { useAlerts } from '@/hooks/useAlerts';
 import { cn } from '@/lib/utils/cn';
 import Link from 'next/link';
 
-// Fonction pour extraire l'ID d'une vidéo YouTube
-function extractYoutubeId(url: string): string {
-  // Format: youtube.com/watch?v=ID ou youtu.be/ID ou youtube.com/live/ID
-  const patterns = [
-    /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/live\/)([a-zA-Z0-9_-]{11})/,
-    /(?:youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/,
-  ];
-
-  for (const pattern of patterns) {
-    const match = url.match(pattern);
-    if (match) return match[1];
-  }
-
-  // Si pas de match, retourner l'URL telle quelle (peut être un ID direct)
-  return url.length === 11 ? url : '';
-}
-
 export default function GamePage() {
   const {
     isPlaying,
@@ -75,10 +58,6 @@ export default function GamePage() {
   const simulationRef = useRef<NodeJS.Timeout | null>(null);
   const [showYoutube, setShowYoutube] = useState(false);
   const [youtubeMinimized, setYoutubeMinimized] = useState(false);
-  const [youtubeUrl, setYoutubeUrl] = useState('');
-
-  // URL du stream Loto Fiesta (à personnaliser)
-  const LOTO_FIESTA_CHANNEL = 'https://www.youtube.com/@LotoFiesta/live';
 
   // Alertes (sons + vibrations)
   const { alertWin, alertBallDrawn, checkAndAlertProgress } = useAlerts();
@@ -395,21 +374,25 @@ export default function GamePage() {
         </div>
       )}
 
-      {/* Lecteur YouTube */}
+      {/* Lecteur YouTube - Live Loto Fiesta */}
       {showYoutube && (
         <div className={cn(
           'bg-[var(--card)] rounded-xl border border-[var(--border)] overflow-hidden',
-          youtubeMinimized ? 'fixed bottom-24 right-4 w-40 z-40 shadow-lg' : ''
+          youtubeMinimized ? 'fixed bottom-24 right-4 w-48 z-40 shadow-lg' : ''
         )}>
           <div className="flex items-center justify-between p-2 bg-red-500 text-white">
             <div className="flex items-center gap-2">
               <Youtube className="w-4 h-4" />
-              <span className="text-sm font-medium">Loto Fiesta</span>
+              <span className="text-sm font-medium">
+                {youtubeMinimized ? 'Live' : 'Loto Fiesta Live'}
+              </span>
+              <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
             </div>
             <div className="flex items-center gap-1">
               <button
                 onClick={() => setYoutubeMinimized(!youtubeMinimized)}
                 className="p-1 hover:bg-white/20 rounded"
+                title={youtubeMinimized ? 'Agrandir' : 'Réduire'}
               >
                 {youtubeMinimized ? (
                   <Maximize2 className="w-4 h-4" />
@@ -420,73 +403,36 @@ export default function GamePage() {
               <button
                 onClick={() => setShowYoutube(false)}
                 className="p-1 hover:bg-white/20 rounded"
+                title="Fermer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
           </div>
 
-          {!youtubeMinimized && !youtubeUrl && (
-            <div className="p-4 space-y-3">
-              <p className="text-sm text-[var(--muted-foreground)]">
-                Entrez l'URL du stream YouTube ou d'une vidéo :
-              </p>
-              <input
-                type="text"
-                placeholder="https://youtube.com/watch?v=..."
-                className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--background)] text-sm"
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    const input = e.currentTarget.value;
-                    if (input.includes('youtube.com') || input.includes('youtu.be')) {
-                      setYoutubeUrl(input);
-                    }
-                  }
-                }}
-              />
-              <div className="flex gap-2">
-                <button
-                  onClick={() => {
-                    const input = document.querySelector('input[placeholder*="youtube"]') as HTMLInputElement;
-                    if (input?.value) {
-                      setYoutubeUrl(input.value);
-                    }
-                  }}
-                  className="flex-1 py-2 bg-red-500 text-white rounded-lg text-sm font-medium"
-                >
-                  Charger
-                </button>
-                <a
-                  href={LOTO_FIESTA_CHANNEL}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="px-4 py-2 bg-[var(--muted)] rounded-lg text-sm"
-                >
-                  Ouvrir chaîne
-                </a>
-              </div>
-            </div>
-          )}
+          <div className={cn(
+            'relative bg-black',
+            youtubeMinimized ? 'aspect-video' : 'aspect-video'
+          )}>
+            {/* Embed direct du live via l'URL de la chaîne */}
+            <iframe
+              src="https://www.youtube.com/embed/live_stream?channel=UC_pN2SI1VDg-HxDqPQHkyOQ&autoplay=1"
+              className="absolute inset-0 w-full h-full"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allowFullScreen
+            />
+          </div>
 
-          {youtubeUrl && (
-            <div className={cn(
-              'relative bg-black',
-              youtubeMinimized ? 'aspect-video' : 'aspect-video'
-            )}>
-              <iframe
-                src={`https://www.youtube.com/embed/${extractYoutubeId(youtubeUrl)}?autoplay=1`}
-                className="absolute inset-0 w-full h-full"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowFullScreen
-              />
-              {!youtubeMinimized && (
-                <button
-                  onClick={() => setYoutubeUrl('')}
-                  className="absolute top-2 right-2 p-1 bg-black/50 text-white rounded hover:bg-black/70"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              )}
+          {!youtubeMinimized && (
+            <div className="p-2 bg-[var(--muted)] flex items-center justify-center gap-2">
+              <a
+                href="https://www.youtube.com/@LotoFiesta/live"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-[var(--primary)] hover:underline"
+              >
+                Ouvrir dans YouTube
+              </a>
             </div>
           )}
         </div>
