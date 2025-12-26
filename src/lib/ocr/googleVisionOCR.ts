@@ -145,6 +145,7 @@ function extractSerialNumber(text: string): string | undefined {
 
 /**
  * Extrait les numéros de loto (1-90) d'un texte OCR
+ * Gère les numéros collés comme "263744" (26, 37, 44) ou "3642" (36, 42)
  */
 function extractLotoNumbers(text: string, serialNumber?: string): number[] {
   // Supprimer le numéro de série du texte pour éviter les faux positifs
@@ -158,6 +159,7 @@ function extractLotoNumbers(text: string, serialNumber?: string): number[] {
     .replace(/L\s*O\s*T\s*O\s*Q\s*U\s*I\s*N\s*E/gi, ' ')
     .replace(/LOTOQUINE/gi, ' ')
     .replace(/LOTOOUINE/gi, ' ')
+    .replace(/LOTOOLINE/gi, ' ')
     .replace(/ILOTOQUINE/gi, ' ')
     .replace(/LOTOQUIN[E]?/gi, ' ');
 
@@ -166,22 +168,66 @@ function extractLotoNumbers(text: string, serialNumber?: string): number[] {
     .replace(/[\n\r\t]/g, ' ')
     .replace(/[^\d\s]/g, ' ');
 
-  // Trouver tous les nombres (1 ou 2 chiffres)
-  const matches = cleaned.match(/\b(\d{1,2})\b/g);
-
-  if (!matches) return [];
-
   const numbers: number[] = [];
 
-  for (const match of matches) {
-    const num = parseInt(match, 10);
-    // Valider que c'est un numéro de loto valide (1-90)
-    if (num >= 1 && num <= 90 && !numbers.includes(num)) {
-      numbers.push(num);
+  // D'abord extraire les nombres isolés (1-2 chiffres avec espaces autour)
+  const simpleMatches = cleaned.match(/(?:^|\s)(\d{1,2})(?:\s|$)/g);
+  if (simpleMatches) {
+    for (const match of simpleMatches) {
+      const num = parseInt(match.trim(), 10);
+      if (num >= 1 && num <= 90 && !numbers.includes(num)) {
+        numbers.push(num);
+      }
+    }
+  }
+
+  // Ensuite traiter les groupes de chiffres collés (3+ chiffres)
+  const groupMatches = cleaned.match(/\d{3,}/g);
+  if (groupMatches) {
+    for (const group of groupMatches) {
+      // Essayer de découper intelligemment
+      const extracted = splitDigitGroup(group);
+      for (const num of extracted) {
+        if (num >= 1 && num <= 90 && !numbers.includes(num)) {
+          numbers.push(num);
+        }
+      }
     }
   }
 
   return numbers;
+}
+
+/**
+ * Découpe un groupe de chiffres collés en numéros de loto valides (1-90)
+ * Ex: "263744" -> [26, 37, 44], "3642" -> [36, 42], "711" -> [7, 11] ou [71, 1]
+ */
+function splitDigitGroup(group: string): number[] {
+  const results: number[] = [];
+  let i = 0;
+
+  while (i < group.length) {
+    // Essayer d'abord 2 chiffres (plus probable pour les numéros de loto)
+    if (i + 2 <= group.length) {
+      const twoDigit = parseInt(group.substring(i, i + 2), 10);
+
+      // Si c'est un nombre valide 10-90, le prendre
+      if (twoDigit >= 10 && twoDigit <= 90) {
+        results.push(twoDigit);
+        i += 2;
+        continue;
+      }
+    }
+
+    // Sinon prendre 1 chiffre (1-9)
+    const oneDigit = parseInt(group[i], 10);
+    if (oneDigit >= 1 && oneDigit <= 9) {
+      results.push(oneDigit);
+    }
+    i += 1;
+  }
+
+  return results;
 }
 
 /**
