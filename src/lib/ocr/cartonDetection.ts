@@ -617,10 +617,10 @@ export async function detectCartons(source: File | string): Promise<DetectedCart
     const y = topY + row * cartonHeight;
     const h = cartonHeight;
 
-    // Marges plus importantes pour éviter les bordures noires
-    // et ne garder que la zone des numéros
-    const marginY = h * 0.08; // 8% de marge verticale
-    const marginXInner = (leftColEnd - leftColStart) * 0.03; // 3% de marge horizontale
+    // Marges minimales - juste assez pour éviter les bordures épaisses
+    // Les numéros sont sur toute la largeur du carton, ne pas les couper !
+    const marginY = h * 0.05; // 5% de marge verticale seulement
+    const marginXInner = 5; // Juste 5 pixels de marge horizontale
 
     // Colonne gauche
     rectangles.push({

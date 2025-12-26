@@ -217,8 +217,7 @@ async function urlToBase64(url: string): Promise<string> {
 
 /**
  * Pré-traitement d'une image pour améliorer l'OCR
- * - Augmente le contraste
- * - Binarise (noir et blanc)
+ * - Augmente le contraste (sans binarisation pour garder les détails)
  * - Agrandit l'image pour une meilleure reconnaissance
  */
 async function preprocessImage(imageSource: string | File): Promise<string> {
@@ -239,30 +238,24 @@ async function preprocessImage(imageSource: string | File): Promise<string> {
         return;
       }
 
-      // Dessiner l'image agrandie
+      // Dessiner l'image agrandie avec un fond blanc
+      ctx.fillStyle = 'white';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-      // Obtenir les données de pixels
+      // Augmenter le contraste sans binariser (garde les nuances)
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
       const data = imageData.data;
 
-      // Binarisation avec seuil adaptatif
+      // Augmenter le contraste: étirer l'histogramme
+      const contrast = 1.5; // Facteur de contraste
+      const factor = (259 * (contrast * 100 + 255)) / (255 * (259 - contrast * 100));
+
       for (let i = 0; i < data.length; i += 4) {
-        const r = data[i];
-        const g = data[i + 1];
-        const b = data[i + 2];
-
-        // Calcul de la luminosité
-        const brightness = 0.299 * r + 0.587 * g + 0.114 * b;
-
-        // Seuil de binarisation - les chiffres noirs sur fond clair/coloré
-        const threshold = 140;
-        const value = brightness < threshold ? 0 : 255;
-
-        data[i] = value;     // R
-        data[i + 1] = value; // G
-        data[i + 2] = value; // B
-        // Alpha reste inchangé
+        // Appliquer le contraste
+        data[i] = Math.max(0, Math.min(255, factor * (data[i] - 128) + 128));
+        data[i + 1] = Math.max(0, Math.min(255, factor * (data[i + 1] - 128) + 128));
+        data[i + 2] = Math.max(0, Math.min(255, factor * (data[i + 2] - 128) + 128));
       }
 
       ctx.putImageData(imageData, 0, 0);
