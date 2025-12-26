@@ -225,46 +225,54 @@ function parsePrizesFlexible(text: string): LotoPrize[] {
 
   console.log('Normalized text (first 1500):', normalized.substring(0, 1500));
 
-  // Stratégie: trouver TOUS les marqueurs "N TYPE" où TYPE = Q, DQ ou CP
-  // puis filtrer ceux qui ont le bon type attendu pour leur numéro
-  const allMarkers: Array<{ index: number; fullMatch: string; number: number; type: PrizeType }> = [];
+  // Stratégie: pour chaque lot attendu (1-24), chercher TOUTES les occurrences
+  // de "N TYPE" dans le texte, puis garder la PREMIÈRE qui a le bon type
+  // Cela évite de confondre "1 Q 1 Smartphone" avec une quantité "1 Q" ailleurs
 
-  // Pattern global pour trouver tous les "N Q/DQ/CP" dans le texte
-  // On cherche: espace ou début, puis 1-2 chiffres, puis espace(s), puis Q/DQ/CP, puis espace
-  const globalPattern = /(?:^|\s)(\d{1,2})\s+(Q|DQ|CP)\s/gi;
+  for (let lotNum = 1; lotNum <= 24; lotNum++) {
+    const expectedType = getExpectedType(lotNum);
 
-  let match;
-  while ((match = globalPattern.exec(normalized)) !== null) {
-    const num = parseInt(match[1], 10);
-    const type = match[2].toUpperCase() as PrizeType;
-    const expectedType = getExpectedType(num);
+    // Trouver TOUTES les occurrences de ce numéro suivi du type attendu
+    const pattern = new RegExp(`(?:^|\\s)(${lotNum})\\s+(${expectedType})\\s`, 'gi');
+    const matches: Array<{ index: number; fullMatch: string }> = [];
 
-    console.log(`Found marker: "${match[0].trim()}" at index ${match.index}, num=${num}, type=${type}, expected=${expectedType}`);
-
-    // Ne garder que si le type correspond au type attendu pour ce numéro
-    if (num >= 1 && num <= 24 && type === expectedType) {
-      allMarkers.push({
+    let match;
+    while ((match = pattern.exec(normalized)) !== null) {
+      matches.push({
         index: match.index,
         fullMatch: match[0],
-        number: num,
-        type,
       });
     }
-  }
 
-  console.log(`Valid markers found: ${allMarkers.length}`);
+    if (matches.length === 0) {
+      console.log(`Lot #${lotNum} ${expectedType}: not found`);
+      continue;
+    }
 
-  // Trier les marqueurs par position dans le texte
-  allMarkers.sort((a, b) => a.index - b.index);
+    // Prendre la PREMIÈRE occurrence (c'est normalement le vrai numéro de lot)
+    const firstMatch = matches[0];
+    console.log(`Lot #${lotNum} ${expectedType}: found ${matches.length} occurrences, using first at index ${firstMatch.index}`);
 
-  // Pour chaque marqueur, extraire la description jusqu'au prochain marqueur
-  for (let i = 0; i < allMarkers.length; i++) {
-    const current = allMarkers[i];
-    const next = allMarkers[i + 1];
+    // Trouver la fin de la description (prochain lot ou fin de texte)
+    const startIdx = firstMatch.index + firstMatch.fullMatch.length;
 
-    // Position après "N TYPE "
-    const startIdx = current.index + current.fullMatch.length;
-    const endIdx = next ? next.index : normalized.length;
+    // Chercher le prochain lot (peu importe lequel, on cherche le pattern général)
+    let endIdx = normalized.length;
+    const nextLotPattern = /\s(\d{1,2})\s+(Q|DQ|CP)\s/gi;
+    nextLotPattern.lastIndex = startIdx;
+
+    let nextMatch;
+    while ((nextMatch = nextLotPattern.exec(normalized)) !== null) {
+      const nextNum = parseInt(nextMatch[1], 10);
+      const nextType = nextMatch[2].toUpperCase() as PrizeType;
+      const nextExpectedType = getExpectedType(nextNum);
+
+      // Vérifier que c'est un vrai marqueur de lot (type correct pour ce numéro)
+      if (nextNum >= 1 && nextNum <= 24 && nextType === nextExpectedType && nextNum !== lotNum) {
+        endIdx = nextMatch.index;
+        break;
+      }
+    }
 
     let description = normalized.substring(startIdx, endIdx).trim();
 
@@ -277,11 +285,11 @@ function parsePrizesFlexible(text: string): LotoPrize[] {
       .replace(/\s+/g, ' ')
       .trim();
 
-    if (description.length > 2 && !prizes.some(p => p.number === current.number)) {
-      console.log(`✓ Prize #${current.number} ${current.type}: ${description.substring(0, 50)}`);
+    if (description.length > 2) {
+      console.log(`✓ Prize #${lotNum} ${expectedType}: ${description.substring(0, 50)}`);
       prizes.push({
-        number: current.number,
-        type: current.type,
+        number: lotNum,
+        type: expectedType,
         description,
       });
     }
