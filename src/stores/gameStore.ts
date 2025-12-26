@@ -47,6 +47,7 @@ interface GameStore {
   startGame: () => void;
   stopGame: () => void;
   resetGame: () => void;
+  clearDrawnBalls: () => void;
 
   // Actions boules
   drawBall: (number: number, source: 'manual' | 'voice') => void;
@@ -247,6 +248,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
     isPlaying: false,
     drawnBalls: [],
     wins: [],
+    voiceRecognitionEnabled: false,
+    startedAt: null,
+  }),
+
+  // Nouveau cadeau : efface seulement les boules et gains, garde les planches
+  clearDrawnBalls: () => set({
+    drawnBalls: [],
+    wins: [],
+    isPlaying: false,
     voiceRecognitionEnabled: false,
     startedAt: null,
   }),

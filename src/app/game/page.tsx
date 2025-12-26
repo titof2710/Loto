@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { Play, Square, RotateCcw, Mic, MicOff, Plus, Volume2 } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { Play, Square, RotateCcw, Mic, MicOff, Plus, Volume2, Gift } from 'lucide-react';
 import { useGameStore } from '@/stores/gameStore';
 import { NumberPad } from '@/components/game/NumberPad';
 import { DrawnBalls } from '@/components/game/DrawnBalls';
@@ -22,6 +22,7 @@ export default function GamePage() {
     startGame,
     stopGame,
     resetGame,
+    clearDrawnBalls,
     drawBall,
     undoLastBall,
     toggleVoiceRecognition,
@@ -31,6 +32,7 @@ export default function GamePage() {
   const [activeWin, setActiveWin] = useState<typeof wins[0] | null>(null);
   const [viewMode, setViewMode] = useState<'keyboard' | 'cartons'>('keyboard');
   const [lastVoiceNumber, setLastVoiceNumber] = useState<number | null>(null);
+  const lastWinsCountRef = useRef(0);
 
   // Alertes (sons + vibrations)
   const { alertWin, alertBallDrawn, checkAndAlertProgress } = useAlerts();
@@ -69,12 +71,19 @@ export default function GamePage() {
     }
   }, [voiceRecognitionEnabled, isPlaying, voiceSupported, startVoice, stopVoice]);
 
-  // Afficher les nouveaux gains
+  // Afficher les nouveaux gains (seulement si c'est un NOUVEAU gain)
   useEffect(() => {
-    if (wins.length > 0) {
+    if (wins.length > lastWinsCountRef.current) {
+      // Il y a un nouveau gain
       const lastWin = wins[wins.length - 1];
       setActiveWin(lastWin);
       alertWin(lastWin.type);
+    }
+    // Reset le compteur si wins a été vidé (nouveau cadeau)
+    if (wins.length === 0) {
+      lastWinsCountRef.current = 0;
+    } else {
+      lastWinsCountRef.current = wins.length;
     }
   }, [wins, alertWin]);
 
@@ -120,13 +129,28 @@ export default function GamePage() {
       {/* Contrôles de partie */}
       <div className="flex items-center gap-2">
         {!isPlaying ? (
-          <button
-            onClick={startGame}
-            className="flex-1 flex items-center justify-center gap-2 py-3 bg-green-500 text-white rounded-lg font-medium"
-          >
-            <Play className="w-5 h-5" />
-            Démarrer la partie
-          </button>
+          <>
+            <button
+              onClick={startGame}
+              className="flex-1 flex items-center justify-center gap-2 py-3 bg-green-500 text-white rounded-lg font-medium"
+            >
+              <Play className="w-5 h-5" />
+              {drawnBalls.length > 0 ? 'Reprendre' : 'Démarrer la partie'}
+            </button>
+            {drawnBalls.length > 0 && (
+              <button
+                onClick={() => {
+                  clearDrawnBalls();
+                  lastWinsCountRef.current = 0;
+                }}
+                className="flex items-center justify-center gap-2 py-3 px-4 bg-blue-500 text-white rounded-lg font-medium"
+                title="Nouveau cadeau"
+              >
+                <Gift className="w-5 h-5" />
+                Nouveau cadeau
+              </button>
+            )}
+          </>
         ) : (
           <>
             <button
