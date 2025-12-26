@@ -20,11 +20,15 @@ export function WinAlert({ win, onDismiss }: WinAlertProps) {
   const [visible, setVisible] = useState(true);
   const config = winTypeLabels[win.type];
 
+  // Log pour debug
+  console.log('WinAlert affichée:', win);
+
   useEffect(() => {
+    // Durée plus longue pour avoir le temps de noter le numéro de série
     const timer = setTimeout(() => {
       setVisible(false);
       setTimeout(onDismiss, 300);
-    }, 5000);
+    }, 30000); // 30 secondes au lieu de 5
 
     return () => clearTimeout(timer);
   }, [onDismiss]);
@@ -54,20 +58,32 @@ export function WinAlert({ win, onDismiss }: WinAlertProps) {
 
         <Trophy className="w-16 h-16 mx-auto mb-4" />
         <h2 className="text-3xl font-bold mb-2">{config.label}</h2>
-        {win.serialNumber && (
-          <div className="bg-white/20 rounded-lg px-4 py-2 mb-3">
-            <p className="text-sm opacity-80">Numéro de série</p>
-            <p className="text-2xl font-bold tracking-wider">{win.serialNumber}</p>
-          </div>
-        )}
-        <p className="text-lg opacity-90">
-          {win.cartonPosition && `Carton #${win.cartonPosition} • `}Boule n°{win.atBallNumber}
-        </p>
-        {win.serialNumber && (
-          <p className="text-sm mt-3 opacity-75">
-            Communiquez ce numéro pour valider votre gain
+
+        {/* Numéro de série - toujours afficher la section */}
+        <div className="bg-white/20 rounded-lg px-4 py-2 mb-3">
+          <p className="text-sm opacity-80">Numéro de série</p>
+          <p className="text-2xl font-bold tracking-wider">
+            {win.serialNumber || `Carton #${win.cartonPosition || '?'}`}
           </p>
-        )}
+        </div>
+
+        <p className="text-lg opacity-90">
+          Carton #{win.cartonPosition || '?'} - Boule n°{win.atBallNumber}
+        </p>
+
+        <p className="text-sm mt-3 opacity-75">
+          {win.serialNumber
+            ? 'Communiquez ce numéro pour valider votre gain'
+            : 'Notez la position du carton gagnant'}
+        </p>
+
+        {/* Bouton fermer explicite */}
+        <button
+          onClick={onDismiss}
+          className="mt-4 px-6 py-2 bg-white/30 rounded-lg font-medium hover:bg-white/40 transition-colors"
+        >
+          Fermer
+        </button>
       </div>
     </div>
   );
