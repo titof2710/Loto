@@ -171,16 +171,31 @@ export const useTirageStore = create<TirageStore>()(
       },
 
       // Obtenir le cadeau actuel
+      // Les lots sont numérotés 1, 2, 3... où chaque groupe de 3 est Q, DQ, CP
+      // Donc lot #1 = Q du groupe 1, lot #2 = DQ du groupe 1, lot #3 = CP du groupe 1
+      // lot #4 = Q du groupe 2, etc.
       getCurrentPrize: (): LotoPrize | null => {
         const state = get();
         if (!state.currentTirage || state.currentTirage.prizes.length === 0) {
           return null;
         }
 
+        // Calculer le numéro du lot attendu
+        // currentGroupIndex = 0, 3, 6... (multiples de 3)
+        // offset = 0 (Q), 1 (DQ), 2 (CP)
         const offset = typeToOffset[state.currentTypeInGroup];
-        const prizeIndex = state.currentGroupIndex + offset;
+        const expectedPrizeNumber = state.currentGroupIndex + offset + 1; // +1 car les lots commencent à 1
 
-        return state.currentTirage.prizes[prizeIndex] || null;
+        console.log(`getCurrentPrize: groupIndex=${state.currentGroupIndex}, type=${state.currentTypeInGroup}, expectedNumber=${expectedPrizeNumber}`);
+
+        // Chercher le lot par son numéro
+        const prize = state.currentTirage.prizes.find(p => p.number === expectedPrizeNumber);
+
+        if (!prize) {
+          console.log('Lot non trouvé, lots disponibles:', state.currentTirage.prizes.map(p => `#${p.number} ${p.type}`));
+        }
+
+        return prize || null;
       },
 
       // Obtenir le prochain cadeau (pour preview)
@@ -191,15 +206,17 @@ export const useTirageStore = create<TirageStore>()(
         }
 
         const currentOffset = typeToOffset[state.currentTypeInGroup];
-        let nextIndex: number;
+        let nextPrizeNumber: number;
 
         if (currentOffset < 2) {
-          nextIndex = state.currentGroupIndex + currentOffset + 1;
+          // Prochain dans le même groupe
+          nextPrizeNumber = state.currentGroupIndex + currentOffset + 2; // +2 car on passe au suivant
         } else {
-          nextIndex = state.currentGroupIndex + 3; // Premier du groupe suivant
+          // Premier du groupe suivant
+          nextPrizeNumber = state.currentGroupIndex + 4; // +3 pour groupe suivant, +1 car lots commencent à 1
         }
 
-        return state.currentTirage.prizes[nextIndex] || null;
+        return state.currentTirage.prizes.find(p => p.number === nextPrizeNumber) || null;
       },
 
       // Vérifie si on est sur le dernier type du groupe (CP)
