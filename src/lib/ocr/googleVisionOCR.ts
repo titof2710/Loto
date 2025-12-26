@@ -261,8 +261,8 @@ function extractNumbersWithPositions(
     }
 
     // Ignorer les textes de l'en-tête du PDF (années, dates, noms, etc.)
-    // Années: 2024, 2025, etc.
-    if (text.match(/^20\d{2}$/)) {
+    // Années réalistes: 2020-2029 seulement (pas 2034 qui pourrait être 20+34 collés)
+    if (text.match(/^202[0-9]$/)) {
       console.log(`Ignoring year: "${text}"`);
       continue;
     }
