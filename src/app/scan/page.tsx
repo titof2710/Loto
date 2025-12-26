@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import { Camera, Upload, Edit3, Check, X, Shuffle, Loader2, AlertCircle, ChevronLeft, ChevronRight, Grid3X3 } from 'lucide-react';
+import { Camera, Upload, Edit3, Check, X, Shuffle, Loader2, AlertCircle, ChevronLeft, ChevronRight, Grid3X3, FileText } from 'lucide-react';
 import { useGameStore } from '@/stores/gameStore';
 import { generateRandomPlanche, createCartonFromNumbers } from '@/lib/game/cartonUtils';
 import { CartonGrid } from '@/components/game/CartonGrid';
@@ -11,6 +11,7 @@ import { v4 as uuidv4 } from 'uuid';
 import type { Planche, Carton } from '@/types';
 import { detectCartons, type DetectedCarton } from '@/lib/ocr/cartonDetection';
 import { extractNumbersFromImage, validateCartonNumbers } from '@/lib/ocr/tesseractOCR';
+import { convertFirstPageToImage, isPDFFile } from '@/lib/ocr/pdfConverter';
 
 type Mode = 'choose' | 'camera' | 'detecting' | 'ocr-processing' | 'ocr-results' | 'manual' | 'edit';
 
@@ -27,6 +28,7 @@ export default function ScanPage() {
   const router = useRouter();
   const { addPlanche } = useGameStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const pdfInputRef = useRef<HTMLInputElement>(null);
 
   const [mode, setMode] = useState<Mode>('choose');
   const [plancheName, setPlancheName] = useState('');
@@ -51,20 +53,38 @@ export default function ScanPage() {
     router.push('/game');
   };
 
-  // Gérer la capture/upload d'image
+  // Gérer la capture/upload d'image ou PDF
   const handleImageCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Afficher l'image
-    const imageUrl = URL.createObjectURL(file);
-    setCapturedImage(imageUrl);
     setMode('detecting');
     setError('');
 
+    let imageUrl: string;
+    let imageSource: string | File;
+
+    // Si c'est un PDF, le convertir en image d'abord
+    if (isPDFFile(file)) {
+      try {
+        imageUrl = await convertFirstPageToImage(file, 3); // Haute résolution pour l'OCR
+        imageSource = imageUrl; // Utiliser l'image convertie pour la détection
+      } catch (err) {
+        console.error('Erreur conversion PDF:', err);
+        setError('Erreur lors de la lecture du PDF. Vérifiez que le fichier est valide.');
+        setMode('choose');
+        return;
+      }
+    } else {
+      imageUrl = URL.createObjectURL(file);
+      imageSource = file; // Utiliser le fichier original pour les images
+    }
+
+    setCapturedImage(imageUrl);
+
     try {
       // Détecter les cartons sur la planche avec la nouvelle méthode
-      const detected = await detectCartons(file);
+      const detected = await detectCartons(imageSource);
       setDetectedCartons(detected);
 
       if (detected.length === 0) {
@@ -320,6 +340,26 @@ export default function ScanPage() {
             <input
               type="file"
               accept="image/*"
+              className="hidden"
+              onChange={handleImageCapture}
+            />
+          </label>
+
+          {/* Importer un PDF */}
+          <label className="flex items-center gap-4 w-full p-4 bg-[var(--card)] rounded-xl border border-[var(--border)] hover:border-[var(--primary)] transition-colors cursor-pointer">
+            <div className="w-12 h-12 rounded-full bg-red-500/10 flex items-center justify-center">
+              <FileText className="w-6 h-6 text-red-500" />
+            </div>
+            <div className="text-left flex-1">
+              <div className="font-semibold">Importer un PDF</div>
+              <div className="text-sm text-[var(--muted-foreground)]">
+                Planche au format PDF (meilleure qualité)
+              </div>
+            </div>
+            <input
+              ref={pdfInputRef}
+              type="file"
+              accept="application/pdf,.pdf"
               className="hidden"
               onChange={handleImageCapture}
             />
