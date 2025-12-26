@@ -190,16 +190,21 @@ export default function ScanPage() {
 
   // Confirmer tous les cartons OCR et créer la planche
   const handleConfirmOCR = () => {
+    console.log('handleConfirmOCR called, ocrResults:', ocrResults);
     const validCartons: Carton[] = [];
 
     for (const result of ocrResults) {
+      console.log(`Carton ${result.index}: ${result.numbers.length} numéros, isValid: ${result.isValid}`);
       if (result.numbers.length === 15) {
         const carton = createCartonFromNumbers(result.numbers, validCartons.length, result.serialNumber);
+        console.log(`createCartonFromNumbers result:`, carton);
         if (carton) {
           validCartons.push(carton);
         }
       }
     }
+
+    console.log(`Total valid cartons: ${validCartons.length}`);
 
     if (validCartons.length === 0) {
       setError('Aucun carton valide. Corrigez les numéros ou passez en saisie manuelle.');
@@ -213,7 +218,9 @@ export default function ScanPage() {
       imageUrl: capturedImage || undefined,
     };
 
+    console.log('Adding planche:', planche);
     addPlanche(planche);
+    console.log('Navigating to /game');
     router.push('/game');
   };
 
@@ -502,7 +509,8 @@ export default function ScanPage() {
   // Mode résultats OCR
   if (mode === 'ocr-results') {
     const selectedResult = ocrResults[selectedCartonIndex];
-    const validCount = ocrResults.filter((r) => r.isValid).length;
+    // Compter les cartons avec exactement 15 numéros (même si validation stricte échoue)
+    const validCount = ocrResults.filter((r) => r.numbers.length === 15).length;
 
     return (
       <div className="p-4 space-y-4">
@@ -526,11 +534,13 @@ export default function ScanPage() {
         {/* Statistiques */}
         <div className="flex gap-2 text-sm">
           <span className="px-3 py-1 bg-green-500/10 text-green-600 rounded-full">
-            {validCount} valides
+            {validCount} valide{validCount > 1 ? 's' : ''}
           </span>
-          <span className="px-3 py-1 bg-orange-500/10 text-orange-600 rounded-full">
-            {ocrResults.length - validCount} à corriger
-          </span>
+          {ocrResults.length - validCount > 0 && (
+            <span className="px-3 py-1 bg-orange-500/10 text-orange-600 rounded-full">
+              {ocrResults.length - validCount} à corriger
+            </span>
+          )}
         </div>
 
         {/* Navigation entre cartons */}
@@ -552,7 +562,7 @@ export default function ScanPage() {
                   'w-6 h-6 rounded text-xs font-bold transition-all',
                   i === selectedCartonIndex
                     ? 'bg-[var(--primary)] text-white scale-110'
-                    : r.isValid
+                    : r.numbers.length === 15
                     ? 'bg-green-500/20 text-green-600'
                     : 'bg-orange-500/20 text-orange-600'
                 )}
@@ -582,7 +592,7 @@ export default function ScanPage() {
             {/* Numéros détectés */}
             <div className={cn(
               'p-4 rounded-lg border',
-              selectedResult.isValid
+              selectedResult.numbers.length === 15
                 ? 'bg-green-500/5 border-green-500/30'
                 : 'bg-orange-500/5 border-orange-500/30'
             )}>
@@ -590,7 +600,7 @@ export default function ScanPage() {
                 <span className="font-medium">Carton #{selectedCartonIndex + 1}</span>
                 <span className={cn(
                   'text-sm px-2 py-0.5 rounded',
-                  selectedResult.isValid
+                  selectedResult.numbers.length === 15
                     ? 'bg-green-500/20 text-green-600'
                     : 'bg-orange-500/20 text-orange-600'
                 )}>
@@ -650,7 +660,7 @@ export default function ScanPage() {
               )}
             </div>
 
-            {!selectedResult.isValid && (
+            {selectedResult.numbers.length !== 15 && (
               <div className="p-3 bg-orange-500/10 border border-orange-500/30 rounded-lg flex items-start gap-2">
                 <AlertCircle className="w-5 h-5 text-orange-500 flex-shrink-0 mt-0.5" />
                 <p className="text-sm text-orange-600 dark:text-orange-400">
