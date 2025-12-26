@@ -104,13 +104,13 @@ export async function extractNumbersWithGoogleVision(
     console.log('Google Vision raw text:', rawText);
 
     // Extraire le numéro de série (format XX-XXXX comme "30-0054")
-    const serialNumber = extractSerialNumber(rawText);
-    if (serialNumber) {
-      console.log('Numéro de série détecté:', serialNumber);
+    const serialInfo = extractSerialNumber(rawText);
+    if (serialInfo) {
+      console.log('Numéro de série détecté:', serialInfo.serialNumber, '(original:', serialInfo.originalPattern, ')');
     }
 
     // Extraire les numéros de loto (1-90)
-    const numbers = extractLotoNumbers(rawText, serialNumber);
+    const numbers = extractLotoNumbers(rawText, serialInfo);
     console.log('Google Vision numéros extraits:', numbers);
 
     onProgress?.(1);
@@ -119,7 +119,7 @@ export async function extractNumbersWithGoogleVision(
       numbers: numbers.sort((a, b) => a - b),
       confidence: numbers.length === 15 ? 98 : (numbers.length / 15) * 100,
       rawText,
-      serialNumber,
+      serialNumber: serialInfo?.serialNumber,
     };
   } catch (error) {
     console.error('Google Vision error:', error);
@@ -131,22 +131,33 @@ export async function extractNumbersWithGoogleVision(
   }
 }
 
+interface SerialNumberInfo {
+  serialNumber: string;       // Numéro de série reconstitué (ex: "30-0035")
+  originalPattern: string;    // Pattern original dans le texte (ex: "0-0035")
+}
+
 /**
  * Extrait le numéro de série du carton (format XX-XXXX comme "30-0054")
  * Gère les cas où le premier chiffre est mal lu (ex: "0-0035" au lieu de "30-0035")
+ * Retourne aussi le pattern original pour pouvoir le supprimer du texte
  */
-function extractSerialNumber(text: string): string | undefined {
+function extractSerialNumber(text: string): SerialNumberInfo | undefined {
   // Chercher un pattern complet comme "30-0054"
   const fullMatch = text.match(/(\d{2})-(\d{4})/);
   if (fullMatch) {
-    return `${fullMatch[1]}-${fullMatch[2]}`;
+    return {
+      serialNumber: `${fullMatch[1]}-${fullMatch[2]}`,
+      originalPattern: fullMatch[0],
+    };
   }
 
-  // Chercher un pattern incomplet comme "0-0035" (premier chiffre manquant)
+  // Chercher un pattern incomplet comme "0-0035" (premier chiffre manquant/coupé)
   const partialMatch = text.match(/(\d)-(\d{4})/);
   if (partialMatch) {
-    // Assumer que c'est un numéro de série 30-XXXX
-    return `30-${partialMatch[2]}`;
+    return {
+      serialNumber: `30-${partialMatch[2]}`,
+      originalPattern: partialMatch[0], // "0-0035" - c'est ça qu'on doit supprimer
+    };
   }
 
   return undefined;
@@ -156,11 +167,14 @@ function extractSerialNumber(text: string): string | undefined {
  * Extrait les numéros de loto (1-90) d'un texte OCR
  * Gère les numéros collés comme "263744" (26, 37, 44) ou "3642" (36, 42)
  */
-function extractLotoNumbers(text: string, serialNumber?: string): number[] {
+function extractLotoNumbers(text: string, serialInfo?: SerialNumberInfo): number[] {
   // Supprimer le numéro de série du texte pour éviter les faux positifs
   let cleanedText = text;
-  if (serialNumber) {
-    cleanedText = cleanedText.replace(new RegExp(serialNumber.replace('-', '[-]?'), 'g'), ' ');
+  if (serialInfo) {
+    // Supprimer le pattern ORIGINAL trouvé dans le texte (ex: "0-0035" pas "30-0035")
+    cleanedText = cleanedText.replace(new RegExp(serialInfo.originalPattern.replace('-', '[-]?'), 'g'), ' ');
+    // Aussi supprimer le numéro reconstitué au cas où il apparaîtrait
+    cleanedText = cleanedText.replace(new RegExp(serialInfo.serialNumber.replace('-', '[-]?'), 'g'), ' ');
   }
 
   // Supprimer "LOTOQUINE" et variations
