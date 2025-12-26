@@ -50,8 +50,113 @@ export async function loadImage(source: File | string): Promise<HTMLCanvasElemen
 }
 
 /**
- * Détecte le rectangle principal de la planche (la zone colorée/blanche)
- * en cherchant la plus grande zone non-sombre de l'image
+ * Détecte le premier carton en cherchant le début des zones colorées/grilles
+ * Les cartons ont des couleurs pastel (jaune, bleu, rose) ou sont blancs avec bordures noires
+ */
+function findFirstCartonY(
+  imageData: ImageData,
+  width: number,
+  height: number,
+  startX: number,
+  endX: number
+): number {
+  const data = imageData.data;
+
+  // Scanner de haut en bas pour trouver la première ligne avec une bordure noire horizontale significative
+  // suivie d'une zone colorée (le premier carton)
+
+  for (let y = 0; y < height * 0.3; y++) { // Chercher dans le premier 30%
+    let darkPixelCount = 0;
+    let totalPixels = 0;
+
+    for (let x = startX; x < endX; x++) {
+      const idx = (y * width + x) * 4;
+      const r = data[idx];
+      const g = data[idx + 1];
+      const b = data[idx + 2];
+      const brightness = (r + g + b) / 3;
+
+      totalPixels++;
+      if (brightness < 60) { // Pixel très sombre (bordure noire)
+        darkPixelCount++;
+      }
+    }
+
+    // Si on a une ligne avec beaucoup de pixels sombres (bordure supérieure du premier carton)
+    const darkRatio = darkPixelCount / totalPixels;
+    if (darkRatio > 0.3 && darkRatio < 0.8) {
+      // Vérifier que la ligne suivante est plus claire (intérieur du carton)
+      if (y + 5 < height) {
+        let nextLineBrightness = 0;
+        let count = 0;
+        for (let x = startX; x < endX; x += 10) {
+          const idx = ((y + 5) * width + x) * 4;
+          nextLineBrightness += (data[idx] + data[idx + 1] + data[idx + 2]) / 3;
+          count++;
+        }
+        if (nextLineBrightness / count > 150) {
+          return y;
+        }
+      }
+    }
+  }
+
+  return 0;
+}
+
+/**
+ * Détecte la fin des cartons (dernière bordure noire avant l'arrière-plan)
+ */
+function findLastCartonY(
+  imageData: ImageData,
+  width: number,
+  height: number,
+  startX: number,
+  endX: number
+): number {
+  const data = imageData.data;
+
+  // Scanner de bas en haut pour trouver la dernière bordure noire
+  for (let y = height - 1; y > height * 0.5; y--) {
+    let darkPixelCount = 0;
+    let totalPixels = 0;
+
+    for (let x = startX; x < endX; x++) {
+      const idx = (y * width + x) * 4;
+      const r = data[idx];
+      const g = data[idx + 1];
+      const b = data[idx + 2];
+      const brightness = (r + g + b) / 3;
+
+      totalPixels++;
+      if (brightness < 60) {
+        darkPixelCount++;
+      }
+    }
+
+    const darkRatio = darkPixelCount / totalPixels;
+    if (darkRatio > 0.3 && darkRatio < 0.8) {
+      // Vérifier que la ligne précédente est claire (intérieur du carton)
+      if (y - 5 > 0) {
+        let prevLineBrightness = 0;
+        let count = 0;
+        for (let x = startX; x < endX; x += 10) {
+          const idx = ((y - 5) * width + x) * 4;
+          prevLineBrightness += (data[idx] + data[idx + 1] + data[idx + 2]) / 3;
+          count++;
+        }
+        if (prevLineBrightness / count > 150) {
+          return y;
+        }
+      }
+    }
+  }
+
+  return height;
+}
+
+/**
+ * Détecte le rectangle principal de la planche (zone des 12 cartons uniquement)
  */
 function detectPlancheBounds(
   imageData: ImageData,
@@ -60,48 +165,46 @@ function detectPlancheBounds(
 ): BoundingBox {
   const data = imageData.data;
 
-  // Trouver les limites de la zone "claire" (la planche)
-  // On cherche les pixels qui ne sont pas trop sombres (pas l'arrière-plan)
+  // D'abord, trouver les limites horizontales (gauche/droite) de la zone claire
   let minX = width;
   let maxX = 0;
-  let minY = height;
-  let maxY = 0;
 
-  // Seuil pour considérer un pixel comme "clair" (partie de la planche)
-  const brightnessThreshold = 100;
+  const brightnessThreshold = 120;
 
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
+  // Scanner le milieu de l'image pour trouver les bords gauche/droite
+  const midY = Math.floor(height / 2);
+  for (let x = 0; x < width; x++) {
+    let brightCount = 0;
+    // Vérifier plusieurs lignes autour du milieu
+    for (let dy = -50; dy <= 50; dy += 10) {
+      const y = Math.max(0, Math.min(height - 1, midY + dy));
       const idx = (y * width + x) * 4;
-      const r = data[idx];
-      const g = data[idx + 1];
-      const b = data[idx + 2];
-
-      // Calculer la luminosité
-      const brightness = (r + g + b) / 3;
-
-      // Si le pixel est assez clair, il fait partie de la planche
+      const brightness = (data[idx] + data[idx + 1] + data[idx + 2]) / 3;
       if (brightness > brightnessThreshold) {
-        if (x < minX) minX = x;
-        if (x > maxX) maxX = x;
-        if (y < minY) minY = y;
-        if (y > maxY) maxY = y;
+        brightCount++;
       }
+    }
+    if (brightCount >= 5) {
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
     }
   }
 
-  // Ajouter une petite marge
-  const margin = 5;
-  minX = Math.max(0, minX - margin);
-  minY = Math.max(0, minY - margin);
-  maxX = Math.min(width - 1, maxX + margin);
-  maxY = Math.min(height - 1, maxY + margin);
+  // Marge de sécurité horizontale
+  minX = Math.max(0, minX + 5);
+  maxX = Math.min(width - 1, maxX - 5);
+
+  // Maintenant trouver le début et la fin des cartons (ignorer l'en-tête et l'arrière-plan)
+  const firstCartonY = findFirstCartonY(imageData, width, height, minX, maxX);
+  const lastCartonY = findLastCartonY(imageData, width, height, minX, maxX);
+
+  console.log(`Détection: firstY=${firstCartonY}, lastY=${lastCartonY}, minX=${minX}, maxX=${maxX}`);
 
   return {
     x: minX,
-    y: minY,
+    y: firstCartonY,
     width: maxX - minX,
-    height: maxY - minY,
+    height: lastCartonY - firstCartonY,
   };
 }
 
