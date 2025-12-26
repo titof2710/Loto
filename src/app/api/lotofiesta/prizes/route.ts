@@ -219,7 +219,8 @@ function parsePrizesFlexible(text: string): LotoPrize[] {
   // Stratégie: chercher tous les "N TYPE" puis extraire la description jusqu'au prochain "N TYPE"
   // Pattern pour trouver toutes les occurrences de "N Q/DQ/CP"
   const typeMarkers: Array<{ index: number; number: number; type: PrizeType }> = [];
-  const markerRegex = /(?:^|[\s,])(\d{1,2})\s+(Q|DQ|CP)(?=\s)/gi;
+  // Regex plus permissif - cherche n'importe quel "nombre espace Q/DQ/CP espace"
+  const markerRegex = /(\d{1,2})\s+(Q|DQ|CP)\s/gi;
 
   let match;
   while ((match = markerRegex.exec(normalized)) !== null) {
@@ -230,13 +231,16 @@ function parsePrizesFlexible(text: string): LotoPrize[] {
     // et que le numéro suit le pattern attendu (Q=1,4,7..., DQ=2,5,8..., CP=3,6,9...)
     const expectedType = getExpectedType(num);
 
+    // Log tous les marqueurs trouvés, même ceux qui ne correspondent pas
+    console.log(`Marker candidate: #${num} ${type}, expected type: ${expectedType}, valid: ${type === expectedType}`);
+
     if (num >= 1 && num <= 30 && type === expectedType) {
       typeMarkers.push({
-        index: match.index + match[0].indexOf(match[1]),
+        index: match.index,
         number: num,
         type,
       });
-      console.log(`Found marker: #${num} ${type} at index ${match.index}`);
+      console.log(`✓ Found valid marker: #${num} ${type} at index ${match.index}`);
     }
   }
 
