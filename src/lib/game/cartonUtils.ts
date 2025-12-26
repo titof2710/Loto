@@ -47,11 +47,12 @@ export function isValidLotoNumber(num: number): boolean {
 
 /**
  * Retourne la colonne correspondante pour un numéro
- * 1-9 → colonne 0, 10-19 → colonne 1, etc.
+ * 1-9 → colonne 0, 10-19 → colonne 1, ..., 80-90 → colonne 8
  */
 export function getColumnForNumber(num: number): number {
   if (num < 1 || num > 90) return -1;
   if (num < 10) return 0;
+  if (num === 90) return 8; // 90 va dans la dernière colonne
   return Math.floor(num / 10);
 }
 
@@ -74,7 +75,12 @@ export function createCartonFromNumbers(numbers: number[], position: number, ser
 
   for (const num of numbers) {
     const col = getColumnForNumber(num);
-    columns.get(col)!.push(num);
+    if (col >= 0 && col <= 8 && columns.has(col)) {
+      columns.get(col)!.push(num);
+    } else {
+      console.error(`Invalid column ${col} for number ${num}`);
+      return null;
+    }
   }
 
   // Vérifier qu'aucune colonne n'a plus de 3 numéros
