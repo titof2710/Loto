@@ -27,14 +27,23 @@ export async function extractNumbersFromImage(
     // Prétraitement léger pour les images déjà propres (PDF)
     const preprocessedImage = await preprocessForOCR(imageSource);
 
-    // Configuration Tesseract optimisée pour les chiffres
-    const result = await Tesseract.recognize(preprocessedImage, 'eng', {
+    // Configuration Tesseract optimisée pour les chiffres uniquement
+    const worker = await Tesseract.createWorker('eng', 1, {
       logger: (m) => {
         if (m.status === 'recognizing text' && onProgress) {
           onProgress(m.progress);
         }
       },
     });
+
+    // Configurer pour ne reconnaître que les chiffres
+    await worker.setParameters({
+      tessedit_char_whitelist: '0123456789 ',
+      tessedit_pageseg_mode: Tesseract.PSM.SINGLE_BLOCK,
+    });
+
+    const result = await worker.recognize(preprocessedImage);
+    await worker.terminate();
 
     const rawText = result.data.text;
     const confidence = result.data.confidence;
