@@ -9,8 +9,8 @@ import { cn } from '@/lib/utils/cn';
 import { useRouter } from 'next/navigation';
 import { v4 as uuidv4 } from 'uuid';
 import type { Planche, Carton } from '@/types';
-import { detectCartonBorders, type DetectedCarton } from '@/lib/ocr/imagePreprocessing';
-import { processDetectedCartons, validateCartonNumbers, buildCartonGrid, type CartonOCRResult } from '@/lib/ocr/tesseractOCR';
+import { detectCartons, type DetectedCarton } from '@/lib/ocr/cartonDetection';
+import { extractNumbersFromImage, validateCartonNumbers } from '@/lib/ocr/tesseractOCR';
 
 type Mode = 'choose' | 'camera' | 'detecting' | 'ocr-processing' | 'ocr-results' | 'manual' | 'edit';
 
@@ -63,12 +63,12 @@ export default function ScanPage() {
     setError('');
 
     try {
-      // Détecter les cartons sur la planche
-      const detected = await detectCartonBorders(file);
+      // Détecter les cartons sur la planche avec la nouvelle méthode
+      const detected = await detectCartons(file);
       setDetectedCartons(detected);
 
       if (detected.length === 0) {
-        setError('Aucun carton détecté. Essayez avec une meilleure photo.');
+        setError('Aucun carton détecté. Essayez avec une meilleure photo ou la saisie manuelle.');
         setMode('choose');
         return;
       }
@@ -77,27 +77,47 @@ export default function ScanPage() {
       setMode('ocr-processing');
       setOcrProgress({ current: 0, total: detected.length, percentage: 0 });
 
-      const results = await processDetectedCartons(detected, (cartonIndex, progress) => {
-        setCurrentOcrCarton(cartonIndex);
-        setOcrProgress({
-          current: cartonIndex,
-          total: detected.length,
-          percentage: ((cartonIndex + progress) / detected.length) * 100,
-        });
-      });
+      const cartonResults: CartonResult[] = [];
 
-      // Convertir en résultats éditables
-      const cartonResults: CartonResult[] = results.map((r) => {
-        const validation = validateCartonNumbers(r.numbers);
-        return {
-          index: r.cartonIndex,
-          numbers: r.numbers,
-          isValid: validation.valid,
-          imageData: r.imageData,
-          isEditing: false,
-          editText: r.numbers.join(' '),
-        };
-      });
+      for (let i = 0; i < detected.length; i++) {
+        const carton = detected[i];
+        setCurrentOcrCarton(i);
+        setOcrProgress({
+          current: i,
+          total: detected.length,
+          percentage: (i / detected.length) * 100,
+        });
+
+        try {
+          const ocrResult = await extractNumbersFromImage(carton.imageData, (p) => {
+            setOcrProgress({
+              current: i,
+              total: detected.length,
+              percentage: ((i + p) / detected.length) * 100,
+            });
+          });
+
+          const validation = validateCartonNumbers(ocrResult.numbers);
+          cartonResults.push({
+            index: carton.index,
+            numbers: ocrResult.numbers,
+            isValid: validation.valid,
+            imageData: carton.imageData,
+            isEditing: false,
+            editText: ocrResult.numbers.join(' '),
+          });
+        } catch (err) {
+          console.error(`Erreur OCR carton ${i}:`, err);
+          cartonResults.push({
+            index: carton.index,
+            numbers: [],
+            isValid: false,
+            imageData: carton.imageData,
+            isEditing: false,
+            editText: '',
+          });
+        }
+      }
 
       setOcrResults(cartonResults);
       setMode('ocr-results');
@@ -390,8 +410,8 @@ export default function ScanPage() {
         </div>
 
         <div className="space-y-4">
-          {/* Grille des cartons détectés */}
-          <div className="grid grid-cols-3 gap-2">
+          {/* Grille des cartons détectés (2 colonnes comme la planche) */}
+          <div className="grid grid-cols-2 gap-2">
             {detectedCartons.map((carton, i) => (
               <div
                 key={i}
