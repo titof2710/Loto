@@ -1,5 +1,6 @@
 import Tesseract from 'tesseract.js';
 import type { DetectedCarton } from './imagePreprocessing';
+import { extractNumbersWithOCRSpace } from './ocrSpaceAPI';
 
 export interface OCRResult {
   numbers: number[];
@@ -17,17 +18,27 @@ export interface CartonOCRResult {
 
 /**
  * Extrait les numéros d'une image de carton via OCR
- * Configuration optimisée pour les numéros de loto
+ * Utilise OCR.space API par défaut (meilleur pour les chiffres)
+ * Fallback sur Tesseract.js si OCR.space échoue
  */
 export async function extractNumbersFromImage(
   imageSource: string | File,
   onProgress?: (progress: number) => void
 ): Promise<OCRResult> {
   try {
-    // Utiliser l'extraction cellule par cellule pour les cartons de loto
+    // Essayer d'abord avec OCR.space (meilleur pour les chiffres)
+    console.log('Tentative OCR avec OCR.space API...');
+    const ocrSpaceResult = await extractNumbersWithOCRSpace(imageSource, onProgress);
+
+    if (ocrSpaceResult.numbers.length >= 5) {
+      console.log('OCR.space a trouvé', ocrSpaceResult.numbers.length, 'numéros:', ocrSpaceResult.numbers);
+      return ocrSpaceResult;
+    }
+
+    // Fallback sur Tesseract si OCR.space n'a pas trouvé assez de numéros
+    console.log('OCR.space insuffisant, fallback sur Tesseract.js...');
     const numbers = await extractNumbersFromCartonGrid(imageSource);
 
-    // Simuler la progression
     onProgress?.(1);
 
     return {

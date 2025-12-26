@@ -1,0 +1,324 @@
+'use client';
+
+/**
+ * OCR via OCR.space API (gratuit)
+ * Engine 2 est optimisé pour la reconnaissance de chiffres
+ *
+ * Limites gratuites:
+ * - 500 requêtes/jour par IP
+ * - 1 MB max par fichier
+ * - 3 pages max pour les PDFs
+ */
+
+export interface OCRSpaceResult {
+  numbers: number[];
+  confidence: number;
+  rawText: string;
+}
+
+// Clé API gratuite personnelle
+const FREE_API_KEY = 'K82030734288957';
+
+/**
+ * Extrait les numéros d'une image via OCR.space API
+ * Utilise Engine 2 qui est meilleur pour les chiffres
+ */
+export async function extractNumbersWithOCRSpace(
+  imageSource: string | File,
+  onProgress?: (progress: number) => void
+): Promise<OCRSpaceResult> {
+  try {
+    onProgress?.(0.1);
+
+    // Convertir l'image en base64 si nécessaire
+    let base64Image: string;
+
+    if (imageSource instanceof File) {
+      base64Image = await fileToBase64(imageSource);
+    } else if (imageSource.startsWith('data:')) {
+      base64Image = imageSource;
+    } else {
+      // URL - on doit la convertir en base64
+      base64Image = await urlToBase64(imageSource);
+    }
+
+    onProgress?.(0.3);
+
+    // Préparer les données pour l'API
+    const formData = new FormData();
+    formData.append('base64Image', base64Image);
+    formData.append('language', 'eng');
+    formData.append('isOverlayRequired', 'false');
+    formData.append('OCREngine', '2'); // Engine 2 est meilleur pour les chiffres
+    formData.append('scale', 'true'); // Améliore la reconnaissance
+    formData.append('isTable', 'true'); // Indique que c'est un tableau
+
+    onProgress?.(0.5);
+
+    // Appel à l'API OCR.space
+    const response = await fetch('https://api.ocr.space/parse/image', {
+      method: 'POST',
+      headers: {
+        'apikey': FREE_API_KEY,
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      throw new Error(`OCR API error: ${response.status}`);
+    }
+
+    const result = await response.json();
+
+    onProgress?.(0.8);
+
+    // Vérifier les erreurs
+    if (result.IsErroredOnProcessing) {
+      console.error('OCR.space error:', result.ErrorMessage);
+      throw new Error(result.ErrorMessage?.[0] || 'OCR processing failed');
+    }
+
+    // Extraire le texte
+    const rawText = result.ParsedResults?.[0]?.ParsedText || '';
+    console.log('OCR.space raw text:', rawText);
+
+    // Extraire les numéros de loto (1-90)
+    const numbers = extractLotoNumbers(rawText);
+
+    onProgress?.(1);
+
+    return {
+      numbers: numbers.sort((a, b) => a - b),
+      confidence: numbers.length === 15 ? 95 : (numbers.length / 15) * 100,
+      rawText,
+    };
+  } catch (error) {
+    console.error('OCR.space error:', error);
+    return {
+      numbers: [],
+      confidence: 0,
+      rawText: '',
+    };
+  }
+}
+
+/**
+ * Extrait les numéros de loto (1-90) d'un texte OCR
+ */
+function extractLotoNumbers(text: string): number[] {
+  // Nettoyer le texte
+  const cleaned = text
+    .replace(/[Oo]/g, '0')  // O -> 0
+    .replace(/[Iil|]/g, '1') // I, i, l, | -> 1
+    .replace(/[Ss]/g, '5')   // S -> 5
+    .replace(/[Bb]/g, '8')   // B -> 8
+    .replace(/[Zz]/g, '2')   // Z -> 2
+    .replace(/[\n\r\t]/g, ' ')
+    .replace(/[^\d\s]/g, ' ');
+
+  // Trouver tous les nombres
+  const matches = cleaned.match(/\b(\d{1,2})\b/g);
+
+  if (!matches) return [];
+
+  const numbers: number[] = [];
+
+  for (const match of matches) {
+    const num = parseInt(match, 10);
+    if (num >= 1 && num <= 90 && !numbers.includes(num)) {
+      numbers.push(num);
+    }
+  }
+
+  return numbers;
+}
+
+/**
+ * Convertit un File en base64
+ */
+async function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+/**
+ * Convertit une URL (ou data URL) en base64
+ */
+async function urlToBase64(url: string): Promise<string> {
+  // Si c'est déjà une data URL, la retourner
+  if (url.startsWith('data:')) {
+    return url;
+  }
+
+  // Charger l'image et la convertir
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        reject(new Error('Could not get canvas context'));
+        return;
+      }
+
+      ctx.drawImage(img, 0, 0);
+      resolve(canvas.toDataURL('image/png'));
+    };
+
+    img.onerror = () => reject(new Error('Failed to load image'));
+    img.src = url;
+  });
+}
+
+/**
+ * Traite un carton individuel avec OCR.space
+ * Découpe en cellules 3x9 et envoie chaque cellule à l'API
+ */
+export async function extractNumbersFromCartonOCRSpace(
+  imageSource: string | File,
+  onProgress?: (progress: number) => void
+): Promise<OCRSpaceResult> {
+  try {
+    // D'abord essayer l'OCR sur l'image entière
+    const result = await extractNumbersWithOCRSpace(imageSource, onProgress);
+
+    // Si on a trouvé suffisamment de numéros, retourner
+    if (result.numbers.length >= 10) {
+      return result;
+    }
+
+    // Sinon, essayer cellule par cellule
+    console.log('OCR.space: pas assez de numéros, essai cellule par cellule...');
+
+    const canvas = await loadImageToCanvas(imageSource);
+    const width = canvas.width;
+    const height = canvas.height;
+
+    const cellWidth = width / 9;
+    const cellHeight = height / 3;
+
+    const numbers: number[] = [];
+    let processedCells = 0;
+    const totalCells = 27;
+
+    for (let row = 0; row < 3; row++) {
+      for (let col = 0; col < 9; col++) {
+        // Extraire la cellule
+        const cellCanvas = document.createElement('canvas');
+        cellCanvas.width = Math.floor(cellWidth);
+        cellCanvas.height = Math.floor(cellHeight);
+
+        const cellCtx = cellCanvas.getContext('2d');
+        if (!cellCtx) continue;
+
+        // Fond blanc
+        cellCtx.fillStyle = 'white';
+        cellCtx.fillRect(0, 0, cellCanvas.width, cellCanvas.height);
+
+        // Copier la cellule
+        cellCtx.drawImage(
+          canvas,
+          col * cellWidth,
+          row * cellHeight,
+          cellWidth,
+          cellHeight,
+          0,
+          0,
+          cellCanvas.width,
+          cellCanvas.height
+        );
+
+        // Vérifier si la cellule a du contenu
+        const imageData = cellCtx.getImageData(0, 0, cellCanvas.width, cellCanvas.height);
+        if (checkCellHasContent(imageData)) {
+          // OCR sur cette cellule
+          const cellResult = await extractNumbersWithOCRSpace(
+            cellCanvas.toDataURL('image/png')
+          );
+
+          for (const num of cellResult.numbers) {
+            if (!numbers.includes(num)) {
+              numbers.push(num);
+            }
+          }
+        }
+
+        processedCells++;
+        onProgress?.(processedCells / totalCells);
+      }
+    }
+
+    return {
+      numbers: numbers.sort((a, b) => a - b),
+      confidence: numbers.length === 15 ? 95 : (numbers.length / 15) * 100,
+      rawText: numbers.join(' '),
+    };
+  } catch (error) {
+    console.error('OCR.space carton error:', error);
+    return {
+      numbers: [],
+      confidence: 0,
+      rawText: '',
+    };
+  }
+}
+
+/**
+ * Vérifie si une cellule contient du contenu
+ */
+function checkCellHasContent(imageData: ImageData): boolean {
+  const data = imageData.data;
+  let darkPixels = 0;
+  const total = data.length / 4;
+
+  for (let i = 0; i < data.length; i += 4) {
+    const brightness = (data[i] + data[i + 1] + data[i + 2]) / 3;
+    if (brightness < 100) {
+      darkPixels++;
+    }
+  }
+
+  return darkPixels / total > 0.02;
+}
+
+/**
+ * Charge une image en canvas
+ */
+async function loadImageToCanvas(source: File | string): Promise<HTMLCanvasElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        reject(new Error('Could not get canvas context'));
+        return;
+      }
+
+      ctx.drawImage(img, 0, 0);
+      resolve(canvas);
+    };
+
+    img.onerror = () => reject(new Error('Failed to load image'));
+
+    if (source instanceof File) {
+      img.src = URL.createObjectURL(source);
+    } else {
+      img.src = source;
+    }
+  });
+}
