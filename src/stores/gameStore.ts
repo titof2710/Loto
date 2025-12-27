@@ -56,6 +56,31 @@ async function clearGameStateFromKV() {
   }
 }
 
+// Mettre à jour les stats de fréquence des numéros
+async function updateBallFrequency(ballNumber: number) {
+  try {
+    await fetch('/api/stats', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ballNumber }),
+    });
+  } catch (error) {
+    console.error('❌ Erreur mise à jour fréquence:', error);
+  }
+}
+
+async function decrementBallFrequency(ballNumber: number) {
+  try {
+    await fetch('/api/stats', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ballNumber, action: 'decrement' }),
+    });
+  } catch (error) {
+    console.error('❌ Erreur décrémentation fréquence:', error);
+  }
+}
+
 async function savePlanchesToKV(planches: Planche[]) {
   try {
     // Enlever les images pour réduire la taille du payload (évite erreur 413)
@@ -533,6 +558,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
       startedAt: state.startedAt?.toISOString() || null,
       isPlaying: true,
     });
+
+    // Mettre à jour les stats de fréquence en temps réel
+    updateBallFrequency(number);
   },
 
   undoLastBall: () => {
@@ -555,6 +583,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
       startedAt: state.startedAt?.toISOString() || null,
       isPlaying: state.isPlaying,
     });
+
+    // Décrémenter les stats de fréquence
+    decrementBallFrequency(lastBall.number);
   },
 
   // Actions reconnaissance vocale
