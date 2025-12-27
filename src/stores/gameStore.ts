@@ -112,6 +112,7 @@ interface GameStore {
   clearPlanches: () => void;
   loadPlanches: () => Promise<void>;
   findDuplicateCartons: (planche: Planche) => number[];
+  updateCartonSerialNumber: (plancheId: string, cartonId: string, serialNumber: string) => void;
 
   // Actions jeu
   startGame: () => void;
@@ -345,6 +346,23 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set({ isLoading: true });
     const planches = await loadPlanchesFromKV();
     set({ planches, isLoading: false });
+  },
+
+  updateCartonSerialNumber: (plancheId, cartonId, serialNumber) => {
+    set((state) => {
+      const newPlanches = state.planches.map(planche => {
+        if (planche.id !== plancheId) return planche;
+        return {
+          ...planche,
+          cartons: planche.cartons.map(carton => {
+            if (carton.id !== cartonId) return carton;
+            return { ...carton, serialNumber };
+          }),
+        };
+      });
+      savePlanchesToKV(newPlanches);
+      return { planches: newPlanches };
+    });
   },
 
   // Actions jeu

@@ -1,9 +1,11 @@
 'use client';
 
+import { useState } from 'react';
 import { cn } from '@/lib/utils/cn';
 import type { Planche, CartonProgress, PrizeType } from '@/types';
 import { CartonGrid } from './CartonGrid';
-import { Trophy, AlertCircle } from 'lucide-react';
+import { Trophy, AlertCircle, Edit2, Check } from 'lucide-react';
+import { useGameStore } from '@/stores/gameStore';
 
 interface PlancheViewProps {
   planche: Planche;
@@ -12,6 +14,10 @@ interface PlancheViewProps {
 }
 
 export function PlancheView({ planche, cartonsProgress, currentPrizeType = 'Q' }: PlancheViewProps) {
+  const { updateCartonSerialNumber } = useGameStore();
+  const [editingCartonId, setEditingCartonId] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState('');
+
   // Fonction pour obtenir le nombre de numéros manquants selon le type
   const getMissingCount = (progress: CartonProgress | undefined): number => {
     if (!progress) return 15;
@@ -82,10 +88,53 @@ export function PlancheView({ planche, cartonsProgress, currentPrizeType = 'Q' }
                   <span className="text-xs text-[var(--muted-foreground)]">
                     #{carton.position + 1}
                   </span>
-                  {carton.serialNumber && (
-                    <span className="text-xs font-mono font-bold text-[var(--primary)]">
-                      {carton.serialNumber}
-                    </span>
+                  {editingCartonId === carton.id ? (
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="text"
+                        value={editValue}
+                        onChange={(e) => setEditValue(e.target.value)}
+                        placeholder="XX-XXXX"
+                        className="w-20 px-1 py-0.5 text-xs font-mono border rounded bg-[var(--card)]"
+                        autoFocus
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            updateCartonSerialNumber(planche.id, carton.id, editValue);
+                            setEditingCartonId(null);
+                          } else if (e.key === 'Escape') {
+                            setEditingCartonId(null);
+                          }
+                        }}
+                      />
+                      <button
+                        onClick={() => {
+                          updateCartonSerialNumber(planche.id, carton.id, editValue);
+                          setEditingCartonId(null);
+                        }}
+                        className="p-0.5 text-green-500 hover:bg-green-500/20 rounded"
+                      >
+                        <Check className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        setEditValue(carton.serialNumber || '');
+                        setEditingCartonId(carton.id);
+                      }}
+                      className="flex items-center gap-1 hover:bg-[var(--muted)] rounded px-1"
+                    >
+                      {carton.serialNumber ? (
+                        <span className="text-xs font-mono font-bold text-[var(--primary)]">
+                          {carton.serialNumber}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-[var(--muted-foreground)] italic">
+                          N° série
+                        </span>
+                      )}
+                      <Edit2 className="w-2.5 h-2.5 text-[var(--muted-foreground)]" />
+                    </button>
                   )}
                 </div>
                 <div className="flex items-center gap-1">
