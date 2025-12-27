@@ -175,8 +175,9 @@ function extractSerialNumberFromAnnotations(annotations: TextAnnotation[]): Seri
     const yValues = vertices.map(v => v.y || 0).filter(y => y > 0);
     const yCenter = yValues.length > 0 ? yValues.reduce((a, b) => a + b, 0) / yValues.length : 0;
 
-    // Ignorer les textes trop haut (zone en-tête) - seuil à 80 pour le numéro de série
-    if (yCenter < 80) {
+    // Ignorer les textes trop haut (zone en-tête) - seuil à 70 pour le numéro de série
+    // (certains cartons ont le numéro de série à Y=73-74)
+    if (yCenter < 70) {
       continue;
     }
 
@@ -293,9 +294,10 @@ function extractNumbersWithPositions(
     const yCenter = yValues.reduce((a, b) => a + b, 0) / yValues.length;
     const xCenter = xValues.reduce((a, b) => a + b, 0) / xValues.length;
 
-    // Ignorer les textes trop haut dans l'image (zone d'en-tête, Y < 100)
-    // Les numéros de carton commencent généralement vers Y=140+
-    if (yCenter < 100) {
+    // Ignorer les textes trop haut dans l'image (zone d'en-tête, Y < 70)
+    // Les numéros de série peuvent être à Y=73-74, donc on utilise 70 comme seuil
+    // Les numéros de série seront filtrés par leur pattern XX-XXXX plus bas
+    if (yCenter < 70) {
       console.log(`Ignoring text in header zone (Y=${Math.round(yCenter)}): "${text}"`);
       continue;
     }
