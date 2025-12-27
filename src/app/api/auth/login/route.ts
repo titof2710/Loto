@@ -52,7 +52,16 @@ export async function POST(request: Request) {
     // Créer la session
     await createSession({ userId, email: user.email });
 
-    return NextResponse.json<AuthResponse>({ success: true, userId });
+    // Retourner l'user sans le passwordHash
+    return NextResponse.json<AuthResponse>({
+      success: true,
+      userId,
+      user: {
+        id: user.id,
+        email: user.email,
+        createdAt: user.createdAt,
+      },
+    });
   } catch (error) {
     console.error('Erreur connexion:', error);
     console.error('Stack:', error instanceof Error ? error.stack : 'N/A');

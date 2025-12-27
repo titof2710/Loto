@@ -10,8 +10,15 @@ export interface Session {
   email: string;
 }
 
+export interface PublicUser {
+  id: string;
+  email: string;
+  createdAt: string;
+}
+
 export interface AuthResponse {
   success: boolean;
   error?: string;
   userId?: string;
+  user?: PublicUser;
 }

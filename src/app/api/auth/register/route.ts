@@ -57,7 +57,16 @@ export async function POST(request: Request) {
     // Créer la session
     await createSession({ userId, email: emailLower });
 
-    return NextResponse.json<AuthResponse>({ success: true, userId });
+    // Retourner l'user sans le passwordHash
+    return NextResponse.json<AuthResponse>({
+      success: true,
+      userId,
+      user: {
+        id: userId,
+        email: emailLower,
+        createdAt: user.createdAt,
+      },
+    });
   } catch (error) {
     console.error('Erreur inscription:', error);
     return NextResponse.json<AuthResponse>(

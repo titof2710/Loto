@@ -304,6 +304,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     isPlaying: true,
     drawnBalls: [],
     wins: [],
+    voiceRecognitionEnabled: false, // Reset voice recognition au démarrage
     startedAt: new Date(),
   }),
 
@@ -321,6 +322,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   }),
 
   // Nouveau cadeau : sauvegarde l'historique puis efface boules et gains, garde les planches
+  // Note: On garde isPlaying à true pour que l'utilisateur puisse continuer à jouer
   clearDrawnBalls: () => {
     const state = get();
     // Sauvegarder dans l'historique avant de nettoyer
@@ -328,9 +330,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set({
       drawnBalls: [],
       wins: [],
-      isPlaying: false,
+      // isPlaying reste inchangé - l'utilisateur continue à jouer
       voiceRecognitionEnabled: false,
-      startedAt: null,
+      startedAt: new Date(), // Nouveau départ pour le prochain groupe
     });
   },
 
