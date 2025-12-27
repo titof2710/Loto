@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import { Camera, Upload, Edit3, Check, X, Shuffle, Loader2, AlertCircle, ChevronLeft, ChevronRight, Grid3X3, FileText } from 'lucide-react';
+import { Edit3, Check, X, Loader2, AlertCircle, ChevronLeft, ChevronRight, FileText } from 'lucide-react';
 import { useGameStore } from '@/stores/gameStore';
-import { generateRandomPlanche, createCartonFromNumbers, createCartonFromNumbersWithPositions } from '@/lib/game/cartonUtils';
+import { createCartonFromNumbers, createCartonFromNumbersWithPositions } from '@/lib/game/cartonUtils';
 import { CartonGrid } from '@/components/game/CartonGrid';
 import { cn } from '@/lib/utils/cn';
 import { useRouter } from 'next/navigation';
@@ -30,7 +30,6 @@ interface CartonResult {
 export default function ScanPage() {
   const router = useRouter();
   const { addPlanche } = useGameStore();
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const pdfInputRef = useRef<HTMLInputElement>(null);
 
   const [mode, setMode] = useState<Mode>('choose');
@@ -48,15 +47,7 @@ export default function ScanPage() {
   const [ocrProgress, setOcrProgress] = useState({ current: 0, total: 0, percentage: 0 });
   const [selectedCartonIndex, setSelectedCartonIndex] = useState(0);
 
-  // Ajouter une planche générée aléatoirement (pour test)
-  const handleGenerateRandom = () => {
-    const name = plancheName || `Planche ${new Date().toLocaleTimeString('fr-FR')}`;
-    const planche = generateRandomPlanche(name);
-    addPlanche(planche);
-    router.push('/game');
-  };
-
-  // Gérer la capture/upload d'image ou PDF
+  // Gérer l'upload de PDF
   const handleImageCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -356,45 +347,10 @@ export default function ScanPage() {
         </div>
 
         <div className="space-y-3">
-          {/* Prendre une photo de la planche */}
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className="flex items-center gap-4 w-full p-4 bg-[var(--card)] rounded-xl border border-[var(--border)] hover:border-[var(--primary)] transition-colors"
-          >
-            <div className="w-12 h-12 rounded-full bg-[var(--primary)]/10 flex items-center justify-center">
-              <Grid3X3 className="w-6 h-6 text-[var(--primary)]" />
-            </div>
-            <div className="text-left flex-1">
-              <div className="font-semibold">Scanner la planche A4</div>
-              <div className="text-sm text-[var(--muted-foreground)]">
-                Photo des 12 cartons en une fois
-              </div>
-            </div>
-          </button>
-
-          {/* Importer une image */}
-          <label className="flex items-center gap-4 w-full p-4 bg-[var(--card)] rounded-xl border border-[var(--border)] hover:border-[var(--primary)] transition-colors cursor-pointer">
-            <div className="w-12 h-12 rounded-full bg-blue-500/10 flex items-center justify-center">
-              <Upload className="w-6 h-6 text-blue-500" />
-            </div>
-            <div className="text-left flex-1">
-              <div className="font-semibold">Importer une image</div>
-              <div className="text-sm text-[var(--muted-foreground)]">
-                Depuis votre galerie
-              </div>
-            </div>
-            <input
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={handleImageCapture}
-            />
-          </label>
-
           {/* Importer un PDF */}
           <label className="flex items-center gap-4 w-full p-4 bg-[var(--card)] rounded-xl border border-[var(--border)] hover:border-[var(--primary)] transition-colors cursor-pointer">
-            <div className="w-12 h-12 rounded-full bg-red-500/10 flex items-center justify-center">
-              <FileText className="w-6 h-6 text-red-500" />
+            <div className="w-12 h-12 rounded-full bg-[var(--primary)]/10 flex items-center justify-center">
+              <FileText className="w-6 h-6 text-[var(--primary)]" />
             </div>
             <div className="text-left flex-1">
               <div className="font-semibold">Importer un PDF</div>
@@ -411,15 +367,6 @@ export default function ScanPage() {
             />
           </label>
 
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            capture="environment"
-            className="hidden"
-            onChange={handleImageCapture}
-          />
-
           {/* Saisie manuelle */}
           <button
             onClick={() => setMode('manual')}
@@ -432,22 +379,6 @@ export default function ScanPage() {
               <div className="font-semibold">Saisie manuelle</div>
               <div className="text-sm text-[var(--muted-foreground)]">
                 Entrez les numéros de chaque carton
-              </div>
-            </div>
-          </button>
-
-          {/* Génération aléatoire (pour test) */}
-          <button
-            onClick={handleGenerateRandom}
-            className="flex items-center gap-4 w-full p-4 bg-[var(--muted)] rounded-xl border border-[var(--border)] hover:border-[var(--primary)] transition-colors"
-          >
-            <div className="w-12 h-12 rounded-full bg-purple-500/10 flex items-center justify-center">
-              <Shuffle className="w-6 h-6 text-purple-500" />
-            </div>
-            <div className="text-left flex-1">
-              <div className="font-semibold">Générer aléatoirement</div>
-              <div className="text-sm text-[var(--muted-foreground)]">
-                Pour tester l'application
               </div>
             </div>
           </button>
