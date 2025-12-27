@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
-import { Trophy, X, Share2, Download, Check } from 'lucide-react';
+import { useState, useRef } from 'react';
+import { Trophy, X, Share2, Check } from 'lucide-react';
 import type { WinEvent, LotoPrize } from '@/types';
 import { cn } from '@/lib/utils/cn';
 
@@ -18,7 +18,6 @@ const winTypeLabels: Record<string, { label: string; color: string; icon: string
 };
 
 export function WinAlert({ win, prize, onDismiss }: WinAlertProps) {
-  const [visible, setVisible] = useState(true);
   const [shared, setShared] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
   const config = winTypeLabels[win.type];
@@ -114,31 +113,16 @@ export function WinAlert({ win, prize, onDismiss }: WinAlertProps) {
     }
   };
 
-  useEffect(() => {
-    // Durée plus longue pour avoir le temps de noter le numéro de série
-    const timer = setTimeout(() => {
-      setVisible(false);
-      setTimeout(onDismiss, 300);
-    }, 30000); // 30 secondes au lieu de 5
-
-    return () => clearTimeout(timer);
-  }, [onDismiss]);
+  // Pas de fermeture automatique - l'utilisateur doit cliquer sur "Fermer"
 
   return (
-    <div
-      className={cn(
-        'fixed inset-0 z-50 flex items-center justify-center p-4 transition-opacity duration-300',
-        visible ? 'opacity-100' : 'opacity-0'
-      )}
-      onClick={onDismiss}
-    >
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50" />
       <div
         className={cn(
-          'relative p-8 rounded-2xl text-white text-center animate-pulse-alert',
+          'relative p-8 rounded-2xl text-white text-center',
           config.color
         )}
-        onClick={(e) => e.stopPropagation()}
       >
         <button
           onClick={onDismiss}
