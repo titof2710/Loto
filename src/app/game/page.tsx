@@ -484,6 +484,98 @@ export default function GamePage() {
         <DrawnBalls balls={drawnBalls} />
       </div>
 
+      {/* Cartons proches (3 numéros ou moins pour le type actuel) - juste après les boules */}
+      {isPlaying && (() => {
+        const getMissingNumbers = (progress: typeof cartonsProgress[0]) => {
+          switch (currentTypeInGroup) {
+            case 'Q': return progress.missingForQuine;
+            case 'DQ': return progress.missingForDoubleQuine;
+            case 'CP': return progress.missingForCartonPlein;
+            default: return progress.missingForQuine;
+          }
+        };
+
+        const closeCartons = cartonsProgress
+          .filter(p => {
+            const missing = getMissingNumbers(p);
+            return missing.length > 0 && missing.length <= 3;
+          })
+          .sort((a, b) => getMissingNumbers(a).length - getMissingNumbers(b).length);
+
+        if (closeCartons.length === 0) return null;
+
+        const typeLabel = currentTypeInGroup === 'Q' ? 'Quine' : currentTypeInGroup === 'DQ' ? 'Double Quine' : 'Carton Plein';
+
+        return (
+          <div className="bg-[var(--card)] rounded-xl p-3 border border-[var(--border)]">
+            <h3 className={cn(
+              'text-sm font-semibold mb-2',
+              currentTypeInGroup === 'Q' && 'text-green-600 dark:text-green-400',
+              currentTypeInGroup === 'DQ' && 'text-purple-600 dark:text-purple-400',
+              currentTypeInGroup === 'CP' && 'text-yellow-600 dark:text-yellow-400'
+            )}>
+              Cartons proches ({typeLabel})
+            </h3>
+            <div className="space-y-2">
+              {closeCartons.map((progress) => {
+                const missing = getMissingNumbers(progress);
+                const planche = planches.find(p => p.id === progress.plancheId);
+                const carton = planche?.cartons.find(c => c.id === progress.cartonId);
+
+                return (
+                  <div
+                    key={progress.cartonId}
+                    className={cn(
+                      'p-2 rounded-lg border',
+                      currentTypeInGroup === 'Q' && (missing.length === 1
+                        ? 'bg-green-500/20 border-green-500/50'
+                        : 'bg-green-500/10 border-green-500/30'),
+                      currentTypeInGroup === 'DQ' && (missing.length === 1
+                        ? 'bg-purple-500/20 border-purple-500/50'
+                        : 'bg-purple-500/10 border-purple-500/30'),
+                      currentTypeInGroup === 'CP' && (missing.length === 1
+                        ? 'bg-yellow-500/20 border-yellow-500/50'
+                        : 'bg-yellow-500/10 border-yellow-500/30')
+                    )}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        {carton?.serialNumber && (
+                          <span className="font-mono font-bold text-sm">
+                            {carton.serialNumber}
+                          </span>
+                        )}
+                        <span className="text-xs text-[var(--muted-foreground)]">
+                          #{carton?.position !== undefined ? carton.position + 1 : '?'}
+                        </span>
+                      </div>
+                      <div className={cn(
+                        'text-sm font-bold',
+                        missing.length === 1 && 'animate-pulse'
+                      )}>
+                        {missing.length === 1 ? (
+                          <span className={cn(
+                            currentTypeInGroup === 'Q' && 'text-green-600 dark:text-green-400',
+                            currentTypeInGroup === 'DQ' && 'text-purple-600 dark:text-purple-400',
+                            currentTypeInGroup === 'CP' && 'text-yellow-600 dark:text-yellow-400'
+                          )}>
+                            Plus qu'un : {missing[0]}
+                          </span>
+                        ) : (
+                          <span className="text-[var(--muted-foreground)]">
+                            Manque {missing.length} : {missing.join(', ')}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Toggle view */}
       <div className="flex rounded-lg bg-[var(--muted)] p-1">
         <button
@@ -512,110 +604,16 @@ export default function GamePage() {
 
       {/* Contenu principal */}
       {viewMode === 'keyboard' ? (
-        <div className="space-y-3">
-          <div className="bg-[var(--card)] rounded-xl p-3 border border-[var(--border)]">
-            <NumberPad
-              drawnNumbers={drawnNumbers}
-              onNumberSelect={(num) => {
-                drawBall(num, 'manual');
-                alertBallDrawn();
-              }}
-              onUndo={undoLastBall}
-              disabled={!isPlaying}
-            />
-          </div>
-
-          {/* Cartons proches (3 numéros ou moins pour le type actuel) */}
-          {isPlaying && (() => {
-            const getMissingNumbers = (progress: typeof cartonsProgress[0]) => {
-              switch (currentTypeInGroup) {
-                case 'Q': return progress.missingForQuine;
-                case 'DQ': return progress.missingForDoubleQuine;
-                case 'CP': return progress.missingForCartonPlein;
-                default: return progress.missingForQuine;
-              }
-            };
-
-            const closeCartons = cartonsProgress
-              .filter(p => {
-                const missing = getMissingNumbers(p);
-                return missing.length > 0 && missing.length <= 3;
-              })
-              .sort((a, b) => getMissingNumbers(a).length - getMissingNumbers(b).length);
-
-            if (closeCartons.length === 0) return null;
-
-            const typeLabel = currentTypeInGroup === 'Q' ? 'Quine' : currentTypeInGroup === 'DQ' ? 'Double Quine' : 'Carton Plein';
-
-            return (
-              <div className="bg-[var(--card)] rounded-xl p-3 border border-[var(--border)]">
-                <h3 className={cn(
-                  'text-sm font-semibold mb-2',
-                  currentTypeInGroup === 'Q' && 'text-green-600 dark:text-green-400',
-                  currentTypeInGroup === 'DQ' && 'text-purple-600 dark:text-purple-400',
-                  currentTypeInGroup === 'CP' && 'text-yellow-600 dark:text-yellow-400'
-                )}>
-                  Cartons proches ({typeLabel})
-                </h3>
-                <div className="space-y-2">
-                  {closeCartons.map((progress) => {
-                    const missing = getMissingNumbers(progress);
-                    const planche = planches.find(p => p.id === progress.plancheId);
-                    const carton = planche?.cartons.find(c => c.id === progress.cartonId);
-
-                    return (
-                      <div
-                        key={progress.cartonId}
-                        className={cn(
-                          'p-2 rounded-lg border',
-                          currentTypeInGroup === 'Q' && (missing.length === 1
-                            ? 'bg-green-500/20 border-green-500/50'
-                            : 'bg-green-500/10 border-green-500/30'),
-                          currentTypeInGroup === 'DQ' && (missing.length === 1
-                            ? 'bg-purple-500/20 border-purple-500/50'
-                            : 'bg-purple-500/10 border-purple-500/30'),
-                          currentTypeInGroup === 'CP' && (missing.length === 1
-                            ? 'bg-yellow-500/20 border-yellow-500/50'
-                            : 'bg-yellow-500/10 border-yellow-500/30')
-                        )}
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            {carton?.serialNumber && (
-                              <span className="font-mono font-bold text-sm">
-                                {carton.serialNumber}
-                              </span>
-                            )}
-                            <span className="text-xs text-[var(--muted-foreground)]">
-                              #{carton?.position !== undefined ? carton.position + 1 : '?'}
-                            </span>
-                          </div>
-                          <div className={cn(
-                            'text-sm font-bold',
-                            missing.length === 1 && 'animate-pulse'
-                          )}>
-                            {missing.length === 1 ? (
-                              <span className={cn(
-                                currentTypeInGroup === 'Q' && 'text-green-600 dark:text-green-400',
-                                currentTypeInGroup === 'DQ' && 'text-purple-600 dark:text-purple-400',
-                                currentTypeInGroup === 'CP' && 'text-yellow-600 dark:text-yellow-400'
-                              )}>
-                                Plus qu'un : {missing[0]}
-                              </span>
-                            ) : (
-                              <span className="text-[var(--muted-foreground)]">
-                                Manque {missing.length} : {missing.join(', ')}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })()}
+        <div className="bg-[var(--card)] rounded-xl p-3 border border-[var(--border)]">
+          <NumberPad
+            drawnNumbers={drawnNumbers}
+            onNumberSelect={(num) => {
+              drawBall(num, 'manual');
+              alertBallDrawn();
+            }}
+            onUndo={undoLastBall}
+            disabled={!isPlaying}
+          />
         </div>
       ) : (
         <div className="space-y-4">
