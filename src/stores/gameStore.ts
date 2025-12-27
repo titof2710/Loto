@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
-import type { Planche, Carton, DrawnBall, WinEvent, CartonProgress, WinType, Cell, GameHistory, GameHistoryWin } from '@/types';
+import type { Planche, Carton, DrawnBall, WinEvent, CartonProgress, WinType, Cell, GameHistory, GameHistoryWin, PrizeType } from '@/types';
+import { useTirageStore } from './tirageStore';
 
 // Fonctions de persistance avec Vercel KV
 async function savePlanchesToKV(planches: Planche[]) {
@@ -208,13 +209,21 @@ function calculateCartonProgress(
   };
 }
 
-// Fonction pour détecter les gains
+// Mapping PrizeType -> WinType
+const prizeTypeToWinType: Record<PrizeType, WinType> = {
+  'Q': 'quine',
+  'DQ': 'double_quine',
+  'CP': 'carton_plein',
+};
+
+// Fonction pour détecter les gains (uniquement le type actuellement joué)
 function detectWins(
   carton: Carton,
   plancheId: string,
   drawnNumbers: number[],
   previousProgress: CartonProgress | null,
-  lastBallNumber: number
+  lastBallNumber: number,
+  targetType: PrizeType
 ): WinEvent[] {
   const wins: WinEvent[] = [];
   const currentProgress = calculateCartonProgress(carton, plancheId, drawnNumbers);
@@ -234,24 +243,28 @@ function detectWins(
     cartonPosition: carton.position + 1, // Position 1-12 (pas 0-11)
   };
 
-  // Quine
-  if (prevCompletedCount < 1 && currentCompletedCount >= 1) {
+  // Ne détecter que le type actuellement joué
+  const targetWinType = prizeTypeToWinType[targetType];
+
+  // Quine - seulement si on joue pour Q
+  if (targetWinType === 'quine' && prevCompletedCount < 1 && currentCompletedCount >= 1) {
     wins.push({
       ...commonData,
       type: 'quine',
     });
   }
 
-  // Double quine
-  if (prevCompletedCount < 2 && currentCompletedCount >= 2) {
+  // Double quine - seulement si on joue pour DQ
+  if (targetWinType === 'double_quine' && prevCompletedCount < 2 && currentCompletedCount >= 2) {
     wins.push({
       ...commonData,
       type: 'double_quine',
     });
   }
 
-  // Carton plein
-  if (currentProgress.missingForCartonPlein.length === 0 &&
+  // Carton plein - seulement si on joue pour CP
+  if (targetWinType === 'carton_plein' &&
+      currentProgress.missingForCartonPlein.length === 0 &&
       (previousProgress?.missingForCartonPlein.length ?? carton.numbers.length) > 0) {
     wins.push({
       ...commonData,
@@ -394,7 +407,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     const drawnNumbers = [...state.drawnBalls.map(b => b.number), number];
 
-    // Calculer les gains potentiels
+    // Obtenir le type de gain actuellement joué depuis tirageStore
+    const currentTypeInGroup = useTirageStore.getState().currentTypeInGroup;
+
+    // Calculer les gains potentiels (uniquement le type actuel)
     const newWins: WinEvent[] = [];
     for (const planche of state.planches) {
       for (const carton of planche.cartons) {
@@ -403,7 +419,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
           planche.id,
           state.drawnBalls.map(b => b.number)
         );
-        const wins = detectWins(carton, planche.id, drawnNumbers, previousProgress, number);
+        const wins = detectWins(carton, planche.id, drawnNumbers, previousProgress, number, currentTypeInGroup);
         newWins.push(...wins);
       }
     }
