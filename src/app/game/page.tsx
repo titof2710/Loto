@@ -56,7 +56,8 @@ export default function GamePage() {
   const [activeWinPrize, setActiveWinPrize] = useState<ReturnType<typeof getCurrentPrize>>(null);
   const [viewMode, setViewMode] = useState<'keyboard' | 'cartons'>('keyboard');
   const [lastVoiceNumber, setLastVoiceNumber] = useState<number | null>(null);
-  const lastWinsCountRef = useRef(0);
+  // Initialiser avec wins.length pour éviter de déclencher des alertes au remontage
+  const lastWinsCountRef = useRef(wins.length);
   const [isSimulating, setIsSimulating] = useState(false);
   const [simulationSpeed, setSimulationSpeed] = useState<'slow' | 'fast'>('slow');
   const simulationRef = useRef<NodeJS.Timeout | null>(null);
