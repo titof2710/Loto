@@ -484,7 +484,7 @@ export default function GamePage() {
         <DrawnBalls balls={drawnBalls} />
       </div>
 
-      {/* Cartons proches (3 numéros ou moins pour le type actuel) - juste après les boules */}
+      {/* Cartons proches - seuils différents selon le type : Q=1, DQ=3, CP=5 */}
       {isPlaying && (() => {
         const getMissingNumbers = (progress: typeof cartonsProgress[0]) => {
           switch (currentTypeInGroup) {
@@ -495,10 +495,13 @@ export default function GamePage() {
           }
         };
 
+        // Seuils différents selon le type de gain
+        const threshold = currentTypeInGroup === 'Q' ? 1 : currentTypeInGroup === 'DQ' ? 3 : 5;
+
         const closeCartons = cartonsProgress
           .filter(p => {
             const missing = getMissingNumbers(p);
-            return missing.length > 0 && missing.length <= 3;
+            return missing.length > 0 && missing.length <= threshold;
           })
           .sort((a, b) => getMissingNumbers(a).length - getMissingNumbers(b).length);
 
