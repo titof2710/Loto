@@ -105,22 +105,34 @@ export default function GamePage() {
     }
   }, [voiceRecognitionEnabled, isPlaying, voiceSupported, startVoice, stopVoice]);
 
-  // Afficher les nouveaux gains (seulement si c'est un NOUVEAU gain)
+  // Convertir le type de gain interne vers PrizeType
+  const winTypeToPrizeType = (winType: string): 'Q' | 'DQ' | 'CP' => {
+    if (winType === 'quine') return 'Q';
+    if (winType === 'double_quine') return 'DQ';
+    return 'CP';
+  };
+
+  // Afficher les nouveaux gains (seulement si c'est un NOUVEAU gain du type actuel)
   // Et avancer automatiquement au cadeau suivant
   useEffect(() => {
     if (wins.length > lastWinsCountRef.current) {
-      // Il y a un nouveau gain
-      const lastWin = wins[wins.length - 1];
+      // Vérifier les nouveaux gains
+      const newWins = wins.slice(lastWinsCountRef.current);
 
-      // IMPORTANT: Capturer le prize AVANT d'avancer au type suivant
-      const prizeAtWin = getCurrentPrize();
-      setActiveWinPrize(prizeAtWin);
-      setActiveWin(lastWin);
-      alertWin(lastWin.type);
+      // Filtrer pour ne garder que les gains du type actuel
+      const relevantWin = newWins.find(w => winTypeToPrizeType(w.type) === currentTypeInGroup);
 
-      // Avancer automatiquement au type suivant (Q→DQ→CP)
-      // puisque c'est TON carton qui a gagné
-      advanceToNextType();
+      if (relevantWin) {
+        // IMPORTANT: Capturer le prize AVANT d'avancer au type suivant
+        const prizeAtWin = getCurrentPrize();
+        setActiveWinPrize(prizeAtWin);
+        setActiveWin(relevantWin);
+        alertWin(relevantWin.type);
+
+        // Avancer automatiquement au type suivant (Q→DQ→CP)
+        // puisque c'est TON carton qui a gagné
+        advanceToNextType();
+      }
     }
     // Reset le compteur si wins a été vidé (nouveau cadeau)
     if (wins.length === 0) {
@@ -128,7 +140,7 @@ export default function GamePage() {
     } else {
       lastWinsCountRef.current = wins.length;
     }
-  }, [wins, alertWin, advanceToNextType, getCurrentPrize]);
+  }, [wins, alertWin, advanceToNextType, getCurrentPrize, currentTypeInGroup]);
 
   // Gérer le clic sur "Cadeau gagné" (quand un autre joueur gagne)
   const handlePrizeWon = useCallback(() => {
