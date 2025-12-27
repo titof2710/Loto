@@ -3,7 +3,59 @@ import { v4 as uuidv4 } from 'uuid';
 import type { Planche, Carton, DrawnBall, WinEvent, CartonProgress, WinType, Cell, GameHistory, GameHistoryWin, PrizeType } from '@/types';
 import { useTirageStore } from './tirageStore';
 
+// Interface pour l'état du jeu sauvegardé
+interface SavedGameState {
+  drawnBalls: DrawnBall[];
+  wins: WinEvent[];
+  startedAt: string | null;
+  isPlaying: boolean;
+}
+
 // Fonctions de persistance avec Vercel KV
+async function saveGameStateToKV(state: SavedGameState) {
+  try {
+    console.log('💾 Sauvegarde état du jeu vers KV:', state.drawnBalls.length, 'boules');
+    const response = await fetch('/api/game-state', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(state),
+    });
+    if (!response.ok) {
+      console.error('❌ Erreur HTTP sauvegarde état du jeu:', response.status, response.statusText);
+    } else {
+      console.log('✅ État du jeu sauvegardé avec succès');
+    }
+  } catch (error) {
+    console.error('❌ Erreur sauvegarde état du jeu:', error);
+  }
+}
+
+async function loadGameStateFromKV(): Promise<SavedGameState | null> {
+  try {
+    console.log('📥 Chargement état du jeu depuis KV...');
+    const response = await fetch('/api/game-state');
+    if (response.ok) {
+      const gameState = await response.json();
+      console.log('✅ État du jeu chargé:', gameState.drawnBalls?.length || 0, 'boules');
+      return gameState;
+    } else {
+      console.error('❌ Erreur HTTP chargement état du jeu:', response.status, response.statusText);
+    }
+  } catch (error) {
+    console.error('❌ Erreur chargement état du jeu:', error);
+  }
+  return null;
+}
+
+async function clearGameStateFromKV() {
+  try {
+    await fetch('/api/game-state', { method: 'DELETE' });
+    console.log('🗑️ État du jeu effacé de KV');
+  } catch (error) {
+    console.error('❌ Erreur suppression état du jeu:', error);
+  }
+}
+
 async function savePlanchesToKV(planches: Planche[]) {
   try {
     // Enlever les images pour réduire la taille du payload (évite erreur 413)
@@ -111,6 +163,7 @@ interface GameStore {
   removePlanche: (plancheId: string) => void;
   clearPlanches: () => void;
   loadPlanches: () => Promise<void>;
+  loadGameState: () => Promise<void>;
   findDuplicateCartons: (planche: Planche) => number[];
   updateCartonSerialNumber: (plancheId: string, cartonId: string, serialNumber: string) => void;
 
@@ -348,6 +401,19 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set({ planches, isLoading: false });
   },
 
+  loadGameState: async () => {
+    const gameState = await loadGameStateFromKV();
+    if (gameState && gameState.drawnBalls && gameState.drawnBalls.length > 0) {
+      set({
+        drawnBalls: gameState.drawnBalls,
+        wins: gameState.wins || [],
+        startedAt: gameState.startedAt ? new Date(gameState.startedAt) : null,
+        isPlaying: gameState.isPlaying || false,
+      });
+      console.log('🎮 État du jeu restauré:', gameState.drawnBalls.length, 'boules,', gameState.wins?.length || 0, 'gains');
+    }
+  },
+
   updateCartonSerialNumber: (plancheId, cartonId, serialNumber) => {
     set((state) => {
       const newPlanches = state.planches.map(planche => {
@@ -393,12 +459,22 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const state = get();
     // Sauvegarder dans l'historique avant de nettoyer
     saveGameToHistory(state.planches, state.drawnBalls, state.wins, state.startedAt);
+
+    const newStartedAt = new Date();
     set({
       drawnBalls: [],
       wins: [],
       // isPlaying reste inchangé - l'utilisateur continue à jouer
       voiceRecognitionEnabled: false,
-      startedAt: new Date(), // Nouveau départ pour le prochain groupe
+      startedAt: newStartedAt, // Nouveau départ pour le prochain groupe
+    });
+
+    // Sauvegarder l'état vide (nouvelle partie)
+    saveGameStateToKV({
+      drawnBalls: [],
+      wins: [],
+      startedAt: newStartedAt.toISOString(),
+      isPlaying: true,
     });
   },
 
@@ -442,23 +518,44 @@ export const useGameStore = create<GameStore>((set, get) => ({
       }
     }
 
+    const newDrawnBalls = [...state.drawnBalls, newBall];
+    const allWins = [...state.wins, ...newWins];
+
     set({
-      drawnBalls: [...state.drawnBalls, newBall],
-      wins: [...state.wins, ...newWins],
+      drawnBalls: newDrawnBalls,
+      wins: allWins,
+    });
+
+    // Sauvegarder l'état du jeu après chaque boule tirée
+    saveGameStateToKV({
+      drawnBalls: newDrawnBalls,
+      wins: allWins,
+      startedAt: state.startedAt?.toISOString() || null,
+      isPlaying: true,
     });
   },
 
-  undoLastBall: () => set((state) => {
-    if (state.drawnBalls.length === 0) return state;
+  undoLastBall: () => {
+    const state = get();
+    if (state.drawnBalls.length === 0) return;
 
     const lastBall = state.drawnBalls[state.drawnBalls.length - 1];
+    const newDrawnBalls = state.drawnBalls.slice(0, -1);
+    const newWins = state.wins.filter(w => w.atBallNumber !== lastBall.number);
 
-    return {
-      drawnBalls: state.drawnBalls.slice(0, -1),
-      // Retirer les gains associés à cette boule
-      wins: state.wins.filter(w => w.atBallNumber !== lastBall.number),
-    };
-  }),
+    set({
+      drawnBalls: newDrawnBalls,
+      wins: newWins,
+    });
+
+    // Sauvegarder l'état du jeu après annulation
+    saveGameStateToKV({
+      drawnBalls: newDrawnBalls,
+      wins: newWins,
+      startedAt: state.startedAt?.toISOString() || null,
+      isPlaying: state.isPlaying,
+    });
+  },
 
   // Actions reconnaissance vocale
   toggleVoiceRecognition: () => set((state) => ({
