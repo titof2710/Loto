@@ -12,6 +12,15 @@ interface PlancheViewProps {
 }
 
 export function PlancheView({ planche, cartonsProgress, currentPrizeType = 'Q' }: PlancheViewProps) {
+  // Trier les cartons par nombre de numéros marqués (du plus élevé au plus bas)
+  const sortedCartons = [...planche.cartons].sort((a, b) => {
+    const progressA = cartonsProgress.find((p) => p.cartonId === a.id);
+    const progressB = cartonsProgress.find((p) => p.cartonId === b.id);
+    const markedA = progressA?.markedNumbers.length || 0;
+    const markedB = progressB?.markedNumbers.length || 0;
+    return markedB - markedA; // Décroissant
+  });
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
@@ -22,7 +31,7 @@ export function PlancheView({ planche, cartonsProgress, currentPrizeType = 'Q' }
       </div>
 
       <div className="grid grid-cols-2 gap-2">
-        {planche.cartons.map((carton) => {
+        {sortedCartons.map((carton) => {
           const progress = cartonsProgress.find((p) => p.cartonId === carton.id);
           const completedLines = progress?.linesCompleted.filter(Boolean).length || 0;
 
