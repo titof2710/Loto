@@ -227,7 +227,7 @@ export const useTirageStore = create<TirageStore>()((set, get) => ({
   },
 
   // Définir manuellement le type quand l'OCR échoue
-  // Crée un lot manuel avec le type sélectionné
+  // Crée un lot manuel avec le type sélectionné ET met à jour le type courant
   setManualPrizeType: (type: PrizeType) => {
     const state = get();
     const prizeNumber = get().getCurrentPrizeNumber();
@@ -249,6 +249,7 @@ export const useTirageStore = create<TirageStore>()((set, get) => ({
 
       set(s => ({
         currentTirage: updatedTirage,
+        currentTypeInGroup: type, // IMPORTANT: Mettre à jour le type courant !
         allTirages: s.allTirages.map(t =>
           t.id === updatedTirage.id ? updatedTirage : t
         ),
