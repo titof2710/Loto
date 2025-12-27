@@ -106,10 +106,11 @@ interface GameStore {
   isLoading: boolean;
 
   // Actions planches
-  addPlanche: (planche: Planche) => void;
+  addPlanche: (planche: Planche) => { added: boolean; duplicateCartons: number[] };
   removePlanche: (plancheId: string) => void;
   clearPlanches: () => void;
   loadPlanches: () => Promise<void>;
+  findDuplicateCartons: (planche: Planche) => number[];
 
   // Actions jeu
   startGame: () => void;
@@ -271,13 +272,47 @@ export const useGameStore = create<GameStore>((set, get) => ({
   startedAt: null,
   isLoading: true,
 
+  // Trouver les cartons en doublon (mêmes 15 numéros)
+  findDuplicateCartons: (planche: Planche): number[] => {
+    const state = get();
+    const duplicates: number[] = [];
+
+    // Récupérer tous les numéros existants (triés pour comparaison)
+    const existingCartonNumbers = new Set<string>();
+    for (const existingPlanche of state.planches) {
+      for (const carton of existingPlanche.cartons) {
+        const sortedNumbers = [...carton.numbers].sort((a, b) => a - b).join(',');
+        existingCartonNumbers.add(sortedNumbers);
+      }
+    }
+
+    // Vérifier chaque carton de la nouvelle planche
+    for (const carton of planche.cartons) {
+      const sortedNumbers = [...carton.numbers].sort((a, b) => a - b).join(',');
+      if (existingCartonNumbers.has(sortedNumbers)) {
+        duplicates.push(carton.position + 1); // Position 1-12
+      }
+    }
+
+    return duplicates;
+  },
+
   // Actions planches
   addPlanche: (planche) => {
+    const duplicates = get().findDuplicateCartons(planche);
+
+    // Si tous les cartons sont des doublons, ne pas ajouter
+    if (duplicates.length === planche.cartons.length) {
+      return { added: false, duplicateCartons: duplicates };
+    }
+
     set((state) => {
       const newPlanches = [...state.planches, planche];
       savePlanchesToKV(newPlanches);
       return { planches: newPlanches };
     });
+
+    return { added: true, duplicateCartons: duplicates };
   },
 
   removePlanche: (plancheId) => {

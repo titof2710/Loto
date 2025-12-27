@@ -242,7 +242,18 @@ export default function ScanPage() {
       };
 
       console.log('Adding planche with', planche.cartons.length, 'cartons');
-      addPlanche(planche);
+      const result = addPlanche(planche);
+
+      if (!result.added) {
+        setError('Cette planche existe déjà (tous les cartons sont des doublons).');
+        return;
+      }
+
+      if (result.duplicateCartons.length > 0) {
+        console.log('Doublons détectés:', result.duplicateCartons);
+        // On ajoute quand même mais on pourrait afficher un avertissement
+      }
+
       console.log('Planche added, navigating to /game');
       router.push('/game');
       console.log('=== handleConfirmOCR END ===');
@@ -300,7 +311,18 @@ export default function ScanPage() {
       imageUrl: capturedImage || undefined,
     };
 
-    addPlanche(planche);
+    const result = addPlanche(planche);
+
+    if (!result.added) {
+      setError('Cette planche existe déjà (tous les cartons sont des doublons).');
+      return;
+    }
+
+    if (result.duplicateCartons.length > 0) {
+      // Avertir mais continuer (certains cartons sont en doublon)
+      alert(`Attention: ${result.duplicateCartons.length} carton(s) en doublon (positions: ${result.duplicateCartons.join(', ')})`);
+    }
+
     router.push('/game');
   };
 
