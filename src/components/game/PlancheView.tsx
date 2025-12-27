@@ -12,13 +12,28 @@ interface PlancheViewProps {
 }
 
 export function PlancheView({ planche, cartonsProgress, currentPrizeType = 'Q' }: PlancheViewProps) {
-  // Trier les cartons par nombre de numéros marqués (du plus élevé au plus bas)
+  // Fonction pour obtenir le nombre de numéros manquants selon le type
+  const getMissingCount = (progress: CartonProgress | undefined): number => {
+    if (!progress) return 15;
+    switch (currentPrizeType) {
+      case 'Q':
+        return progress.missingForQuine.length;
+      case 'DQ':
+        return progress.missingForDoubleQuine.length;
+      case 'CP':
+        return progress.missingForCartonPlein.length;
+      default:
+        return progress.missingForQuine.length;
+    }
+  };
+
+  // Trier les cartons par proximité de l'objectif (moins de numéros manquants = plus proche)
   const sortedCartons = [...planche.cartons].sort((a, b) => {
     const progressA = cartonsProgress.find((p) => p.cartonId === a.id);
     const progressB = cartonsProgress.find((p) => p.cartonId === b.id);
-    const markedA = progressA?.markedNumbers.length || 0;
-    const markedB = progressB?.markedNumbers.length || 0;
-    return markedB - markedA; // Décroissant
+    const missingA = getMissingCount(progressA);
+    const missingB = getMissingCount(progressB);
+    return missingA - missingB; // Croissant (moins de manquants = premier)
   });
 
   return (
@@ -93,11 +108,20 @@ export function PlancheView({ planche, cartonsProgress, currentPrizeType = 'Q' }
 
               {/* Progression */}
               {progress && (
-                <div className="mt-1 text-xs text-[var(--muted-foreground)]">
-                  {progress.markedNumbers.length}/15
-                  {isCloseToWin && (
-                    <span className="ml-1 text-orange-500 font-bold">
-                      Plus qu'un {currentPrizeType === 'Q' ? 'Q' : currentPrizeType === 'DQ' ? 'DQ' : 'CP'} !
+                <div className="mt-1 text-xs text-[var(--muted-foreground)] flex items-center justify-between">
+                  <span>{progress.markedNumbers.length}/15</span>
+                  {isCloseToWin ? (
+                    <span className="text-orange-500 font-bold animate-pulse">
+                      1 pour {currentPrizeType}!
+                    </span>
+                  ) : (
+                    <span className={cn(
+                      'font-medium',
+                      currentPrizeType === 'Q' && 'text-green-600',
+                      currentPrizeType === 'DQ' && 'text-purple-600',
+                      currentPrizeType === 'CP' && 'text-yellow-600',
+                    )}>
+                      {getMissingCount(progress)} pour {currentPrizeType}
                     </span>
                   )}
                 </div>
