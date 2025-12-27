@@ -22,6 +22,7 @@ interface TirageStore {
   getCurrentPrizeNumber: () => number; // Numéro du lot attendu (même si non trouvé)
   getNextPrize: () => LotoPrize | null;
   isLastTypeInGroup: () => boolean;
+  setManualPrizeType: (type: PrizeType) => void; // Définir manuellement le type quand OCR échoue
 }
 
 // Mapping type -> offset dans le groupe
@@ -223,6 +224,36 @@ export const useTirageStore = create<TirageStore>()((set, get) => ({
   // Vérifie si on est sur le dernier type du groupe (CP)
   isLastTypeInGroup: (): boolean => {
     return get().currentTypeInGroup === 'CP';
+  },
+
+  // Définir manuellement le type quand l'OCR échoue
+  // Crée un lot manuel avec le type sélectionné
+  setManualPrizeType: (type: PrizeType) => {
+    const state = get();
+    const prizeNumber = get().getCurrentPrizeNumber();
+
+    // Créer un lot manuel
+    const manualPrize: LotoPrize = {
+      number: prizeNumber,
+      type,
+      description: `Lot #${prizeNumber} (manuel)`,
+    };
+
+    // Ajouter le lot à la liste si le tirage existe
+    if (state.currentTirage) {
+      const updatedPrizes = [...state.currentTirage.prizes, manualPrize];
+      const updatedTirage = {
+        ...state.currentTirage,
+        prizes: updatedPrizes,
+      };
+
+      set(s => ({
+        currentTirage: updatedTirage,
+        allTirages: s.allTirages.map(t =>
+          t.id === updatedTirage.id ? updatedTirage : t
+        ),
+      }));
+    }
   },
 }));
 // Note: Pas de persist localStorage car le cache est sur Vercel (Upstash Redis)

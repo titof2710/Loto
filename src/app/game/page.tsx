@@ -46,6 +46,7 @@ export default function GamePage() {
     getCurrentPrize,
     getCurrentPrizeNumber,
     isLastTypeInGroup,
+    setManualPrizeType,
   } = useTirageStore();
 
   // Hook pour le sélecteur de tirage
@@ -267,6 +268,7 @@ export default function GamePage() {
         isLoading={isPrizesLoading}
         onChangeTirage={tirageSelector.open}
         onSkipToNext={advanceToNextType}
+        onSelectType={setManualPrizeType}
       />
 
       {/* Contrôles de partie */}

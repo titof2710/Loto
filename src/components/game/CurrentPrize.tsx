@@ -13,6 +13,7 @@ interface CurrentPrizeProps {
   isLoading?: boolean;
   onChangeTirage?: () => void;
   onSkipToNext?: () => void; // Pour passer au lot suivant si celui-ci manque
+  onSelectType?: (type: PrizeType) => void; // Pour sélectionner manuellement le type quand OCR échoue
 }
 
 // Couleurs par type de gain
@@ -48,7 +49,8 @@ export function CurrentPrize({
   allPrizes,
   isLoading,
   onChangeTirage,
-  onSkipToNext
+  onSkipToNext,
+  onSelectType
 }: CurrentPrizeProps) {
   const [showAllPrizes, setShowAllPrizes] = useState(false);
 
@@ -63,7 +65,7 @@ export function CurrentPrize({
     );
   }
 
-  // Lot non trouvé mais on peut continuer
+  // Lot non trouvé mais on peut continuer - demander le type
   if (!prize && prizeNumber) {
     return (
       <>
@@ -96,27 +98,56 @@ export function CurrentPrize({
           )}
 
           <div className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="flex-shrink-0 w-12 h-12 rounded-lg bg-orange-500 flex items-center justify-center">
-                <AlertTriangle className="w-6 h-6 text-white" />
+            <div className="flex items-center gap-3 mb-3">
+              <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-orange-500 flex items-center justify-center">
+                <AlertTriangle className="w-5 h-5 text-white" />
               </div>
               <div className="flex-1">
                 <p className="text-orange-600 dark:text-orange-400 font-medium">
                   Lot #{prizeNumber} non trouvé
                 </p>
                 <p className="text-sm text-[var(--muted-foreground)]">
-                  L'OCR n'a pas détecté ce lot
+                  Sélectionnez le type de lot :
                 </p>
               </div>
-              {onSkipToNext && (
-                <button
-                  onClick={onSkipToNext}
-                  className="px-3 py-2 bg-orange-500 text-white rounded-lg text-sm font-medium hover:bg-orange-600"
-                >
-                  Passer →
-                </button>
-              )}
             </div>
+
+            {/* Boutons de sélection du type */}
+            {onSelectType && (
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  onClick={() => onSelectType('Q')}
+                  className="flex flex-col items-center gap-1 p-3 rounded-lg bg-green-500 text-white font-bold hover:bg-green-600 transition-colors"
+                >
+                  <span className="text-lg">Q</span>
+                  <span className="text-xs opacity-90">Quine</span>
+                </button>
+                <button
+                  onClick={() => onSelectType('DQ')}
+                  className="flex flex-col items-center gap-1 p-3 rounded-lg bg-purple-500 text-white font-bold hover:bg-purple-600 transition-colors"
+                >
+                  <span className="text-lg">DQ</span>
+                  <span className="text-xs opacity-90">Double Q</span>
+                </button>
+                <button
+                  onClick={() => onSelectType('CP')}
+                  className="flex flex-col items-center gap-1 p-3 rounded-lg bg-yellow-500 text-white font-bold hover:bg-yellow-600 transition-colors"
+                >
+                  <span className="text-lg">CP</span>
+                  <span className="text-xs opacity-90">Carton P</span>
+                </button>
+              </div>
+            )}
+
+            {/* Bouton passer si pas de sélection de type */}
+            {!onSelectType && onSkipToNext && (
+              <button
+                onClick={onSkipToNext}
+                className="w-full px-3 py-2 bg-orange-500 text-white rounded-lg text-sm font-medium hover:bg-orange-600"
+              >
+                Passer au suivant →
+              </button>
+            )}
           </div>
         </div>
 
