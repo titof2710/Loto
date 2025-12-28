@@ -119,9 +119,15 @@ export async function extractNumbersWithGoogleVision(
       console.log('Numéro de série détecté:', serialInfo.serialNumber, '(original:', serialInfo.originalPattern, ')');
     }
 
+    // Calculer la largeur de l'image depuis la première annotation (qui couvre tout le texte)
+    const firstAnnotation = textAnnotations[0];
+    const imageWidth = firstAnnotation?.boundingPoly?.vertices
+      ? Math.max(...firstAnnotation.boundingPoly.vertices.map((v: { x?: number }) => v.x || 0))
+      : undefined;
+
     // Extraire les numéros avec leurs positions Y depuis les annotations individuelles
     // Les éléments 1+ contiennent chaque mot/numéro détecté avec sa bounding box
-    const numbersWithPositions = extractNumbersWithPositions(textAnnotations.slice(1), serialInfo);
+    const numbersWithPositions = extractNumbersWithPositions(textAnnotations.slice(1), serialInfo, imageWidth);
     console.log('Google Vision numéros avec positions:', numbersWithPositions);
 
     // Extraire juste les numéros pour compatibilité
@@ -212,10 +218,14 @@ function getColumnForNumber(num: number): number {
 
 /**
  * Extrait les numéros avec leurs positions Y depuis les annotations Google Vision
+ * @param annotations Les annotations individuelles de Google Vision
+ * @param serialInfo Info sur le numéro de série à ignorer
+ * @param imageWidth Largeur de l'image pour calculer les colonnes
  */
 function extractNumbersWithPositions(
   annotations: TextAnnotation[],
-  serialInfo?: SerialNumberInfo
+  serialInfo?: SerialNumberInfo,
+  imageWidth?: number
 ): NumberWithPosition[] {
   const results: NumberWithPosition[] = [];
   const seenNumbers = new Set<number>();
@@ -302,8 +312,8 @@ function extractNumbersWithPositions(
       continue;
     }
 
-    // Extraire les numéros du texte
-    const nums = extractNumbersFromText(text);
+    // Extraire les numéros du texte (avec position X pour validation des groupes collés)
+    const nums = extractNumbersFromText(text, xCenter, imageWidth);
 
     for (const num of nums) {
       if (num >= 1 && num <= 90) {
@@ -408,8 +418,11 @@ function extractNumbersWithPositions(
 
 /**
  * Extrait les numéros d'un texte court (un mot détecté par Vision)
+ * @param text Le texte détecté
+ * @param xCenter Position X centrale du texte (optionnel, pour validation)
+ * @param imageWidth Largeur de l'image (optionnel, pour calcul de colonne)
  */
-function extractNumbersFromText(text: string): number[] {
+function extractNumbersFromText(text: string, xCenter?: number, imageWidth?: number): number[] {
   const cleaned = text.replace(/[^\d]/g, '');
   if (!cleaned) return [];
 
@@ -418,8 +431,8 @@ function extractNumbersFromText(text: string): number[] {
     return num >= 1 && num <= 90 ? [num] : [];
   }
 
-  // Pour les groupes de chiffres collés, utiliser splitDigitGroup
-  return splitDigitGroup(cleaned);
+  // Pour les groupes de chiffres collés, utiliser splitDigitGroup avec validation par position X
+  return splitDigitGroupWithPosition(cleaned, xCenter, imageWidth);
 }
 
 /**
@@ -583,6 +596,87 @@ function findBestSplit(group: string): number[] {
     }
     return best;
   }, results[0]);
+}
+
+/**
+ * Découpe un groupe de chiffres collés en numéros de loto valides (1-90)
+ * Utilise la position X pour valider le bon découpage
+ * Ex: "21428" à position X colonne 2 -> probablement commence par un numéro 20-29
+ */
+function splitDigitGroupWithPosition(group: string, xCenter?: number, imageWidth?: number): number[] {
+  // Si on a la position X et la largeur de l'image, on peut calculer la colonne attendue
+  if (xCenter !== undefined && imageWidth !== undefined && imageWidth > 0) {
+    // La grille de loto a 9 colonnes (0-8)
+    // Position X normalisée entre 0 et 1
+    const normalizedX = xCenter / imageWidth;
+    // Colonne estimée (0-8)
+    const estimatedColumn = Math.min(8, Math.floor(normalizedX * 9));
+
+    // Trouver tous les découpages possibles
+    const allSplits = findAllSplits(group);
+
+    if (allSplits.length > 0) {
+      // Filtrer les découpages où le premier numéro correspond à la colonne estimée
+      const matchingColumnSplits = allSplits.filter(split => {
+        if (split.length === 0) return false;
+        const firstNum = split[0];
+        const expectedColumn = getColumnForNumber(firstNum);
+        // Tolérance de 1 colonne car la position peut être approximative
+        return Math.abs(expectedColumn - estimatedColumn) <= 1;
+      });
+
+      if (matchingColumnSplits.length > 0) {
+        // Parmi les découpages qui correspondent à la colonne, prendre celui avec le plus de numéros
+        const best = matchingColumnSplits.reduce((a, b) => b.length > a.length ? b : a);
+        console.log(`Split "${group}" -> [${best.join(', ')}] (colonne estimée: ${estimatedColumn}, premier num colonne: ${getColumnForNumber(best[0])})`);
+        return best;
+      }
+    }
+  }
+
+  // Fallback: utiliser la recherche exhaustive sans contexte de position
+  return findBestSplit(group);
+}
+
+/**
+ * Trouve tous les découpages valides possibles d'un groupe de chiffres
+ */
+function findAllSplits(group: string): number[][] {
+  const results: number[][] = [];
+
+  function findSplits(remaining: string, current: number[]): void {
+    if (remaining.length === 0) {
+      results.push([...current]);
+      return;
+    }
+
+    // Essayer de prendre 1 chiffre
+    if (remaining.length >= 1) {
+      const oneDigit = parseInt(remaining[0], 10);
+      if (oneDigit >= 1 && oneDigit <= 9) {
+        current.push(oneDigit);
+        findSplits(remaining.substring(1), current);
+        current.pop();
+      }
+    }
+
+    // Essayer de prendre 2 chiffres
+    if (remaining.length >= 2) {
+      const twoDigits = parseInt(remaining.substring(0, 2), 10);
+      if (twoDigits >= 10 && twoDigits <= 90) {
+        current.push(twoDigits);
+        findSplits(remaining.substring(2), current);
+        current.pop();
+      }
+    }
+  }
+
+  // Limiter la recherche pour les groupes longs
+  if (group.length <= 8) {
+    findSplits(group, []);
+  }
+
+  return results;
 }
 
 /**
