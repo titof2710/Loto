@@ -14,7 +14,7 @@ import { extractNumbersFromImage, validateCartonNumbers } from '@/lib/ocr/tesser
 import { convertFirstPageToImage, isPDFFile } from '@/lib/ocr/pdfConverter';
 import type { NumberWithPosition } from '@/lib/ocr/googleVisionOCR';
 
-type Mode = 'choose' | 'camera' | 'detecting' | 'ocr-processing' | 'ocr-results' | 'manual' | 'edit';
+type Mode = 'choose' | 'camera' | 'detecting' | 'ocr-processing' | 'ocr-results' | 'manual';
 
 interface CartonResult {
   index: number;
@@ -288,12 +288,32 @@ export default function ScanPage() {
       return;
     }
 
-    setCartons([...cartons, carton]);
+    const newCartons = [...cartons, carton];
+    setCartons(newCartons);
     setCartonNumbers('');
-    setCurrentCartonIndex(cartons.length + 1);
+    setCurrentCartonIndex(newCartons.length);
 
-    if (cartons.length + 1 >= 12) {
-      setMode('edit');
+    // Quand on atteint 12 cartons, sauvegarder automatiquement la planche
+    if (newCartons.length >= 12) {
+      const planche: Planche = {
+        id: uuidv4(),
+        name: plancheName || `Planche ${new Date().toLocaleTimeString('fr-FR')}`,
+        cartons: newCartons,
+        imageUrl: capturedImage || undefined,
+      };
+
+      const result = addPlanche(planche);
+
+      if (!result.added) {
+        setError('Cette planche existe déjà (tous les cartons sont des doublons).');
+        return;
+      }
+
+      if (result.duplicateCartons.length > 0) {
+        alert(`Attention: ${result.duplicateCartons.length} carton(s) en doublon (positions: ${result.duplicateCartons.join(', ')})`);
+      }
+
+      router.push('/game');
     }
   };
 

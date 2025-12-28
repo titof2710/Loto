@@ -601,41 +601,82 @@ function findBestSplit(group: string): number[] {
 /**
  * Découpe un groupe de chiffres collés en numéros de loto valides (1-90)
  * Utilise la position X pour valider le bon découpage
- * Ex: "21428" à position X colonne 2 -> probablement commence par un numéro 20-29
+ * Ex: "21428" à position X colonne 2 -> probablement [2, 14, 28] car 2 est dans col 0
+ *
+ * IMPORTANT: Un carton de loto a 5 numéros par ligne, donc un groupe de chiffres
+ * collés représente généralement 2-3 numéros (max 5 si toute la ligne est collée)
+ * et JAMAIS de doublons
  */
 function splitDigitGroupWithPosition(group: string, xCenter?: number, imageWidth?: number): number[] {
-  // Si on a la position X et la largeur de l'image, on peut calculer la colonne attendue
+  // Trouver tous les découpages possibles
+  const allSplits = findAllSplits(group);
+
+  if (allSplits.length === 0) {
+    return findBestSplit(group);
+  }
+
+  // Filtrer les découpages qui ont des doublons (impossible dans un carton)
+  const validSplits = allSplits.filter(split => {
+    const unique = new Set(split);
+    return unique.size === split.length; // Pas de doublons
+  });
+
+  if (validSplits.length === 0) {
+    // Fallback si tous ont des doublons
+    return findBestSplit(group);
+  }
+
+  // Si on a la position X, filtrer par colonne
+  let candidateSplits = validSplits;
+  let estimatedColumn: number | undefined;
+
   if (xCenter !== undefined && imageWidth !== undefined && imageWidth > 0) {
-    // La grille de loto a 9 colonnes (0-8)
-    // Position X normalisée entre 0 et 1
     const normalizedX = xCenter / imageWidth;
-    // Colonne estimée (0-8)
-    const estimatedColumn = Math.min(8, Math.floor(normalizedX * 9));
+    estimatedColumn = Math.min(8, Math.floor(normalizedX * 9));
 
-    // Trouver tous les découpages possibles
-    const allSplits = findAllSplits(group);
+    const matchingColumnSplits = validSplits.filter(split => {
+      if (split.length === 0) return false;
+      const firstNum = split[0];
+      const expectedColumn = getColumnForNumber(firstNum);
+      return Math.abs(expectedColumn - estimatedColumn!) <= 1;
+    });
 
-    if (allSplits.length > 0) {
-      // Filtrer les découpages où le premier numéro correspond à la colonne estimée
-      const matchingColumnSplits = allSplits.filter(split => {
-        if (split.length === 0) return false;
-        const firstNum = split[0];
-        const expectedColumn = getColumnForNumber(firstNum);
-        // Tolérance de 1 colonne car la position peut être approximative
-        return Math.abs(expectedColumn - estimatedColumn) <= 1;
-      });
-
-      if (matchingColumnSplits.length > 0) {
-        // Parmi les découpages qui correspondent à la colonne, prendre celui avec le plus de numéros
-        const best = matchingColumnSplits.reduce((a, b) => b.length > a.length ? b : a);
-        console.log(`Split "${group}" -> [${best.join(', ')}] (colonne estimée: ${estimatedColumn}, premier num colonne: ${getColumnForNumber(best[0])})`);
-        return best;
-      }
+    if (matchingColumnSplits.length > 0) {
+      candidateSplits = matchingColumnSplits;
     }
   }
 
-  // Fallback: utiliser la recherche exhaustive sans contexte de position
-  return findBestSplit(group);
+  // Parmi les candidats, choisir le meilleur découpage:
+  // 1. Préférer les découpages où les numéros sont dans des colonnes différentes
+  // 2. Si égalité, préférer celui avec plus de nombres à 2 chiffres
+  // 3. Si égalité, préférer celui avec le moins de numéros (plus réaliste)
+  const scoredSplits = candidateSplits.map(split => {
+    const columns = new Set(split.map(n => getColumnForNumber(n)));
+    const twoDigitCount = split.filter(n => n >= 10).length;
+    return {
+      split,
+      uniqueColumns: columns.size,
+      twoDigitCount,
+      length: split.length,
+    };
+  });
+
+  scoredSplits.sort((a, b) => {
+    // Plus de colonnes uniques = mieux (évite les conflits)
+    if (b.uniqueColumns !== a.uniqueColumns) return b.uniqueColumns - a.uniqueColumns;
+    // Plus de nombres à 2 chiffres = mieux (plus courant au loto)
+    if (b.twoDigitCount !== a.twoDigitCount) return b.twoDigitCount - a.twoDigitCount;
+    // Moins de numéros = mieux (plus réaliste, moins d'erreurs)
+    return a.length - b.length;
+  });
+
+  const best = scoredSplits[0].split;
+
+  if (estimatedColumn !== undefined) {
+    console.log(`Split "${group}" -> [${best.join(', ')}] (col estimée: ${estimatedColumn}, cols: ${[...new Set(best.map(n => getColumnForNumber(n)))].join(',')})`);
+  }
+
+  return best;
 }
 
 /**
