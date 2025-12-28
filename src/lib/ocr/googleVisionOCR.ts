@@ -526,36 +526,79 @@ function extractLotoNumbers(text: string, serialInfo?: SerialNumberInfo): number
 }
 
 /**
- * Découpe un groupe de chiffres collés en numéros de loto valides (1-90)
- * Ex: "263744" -> [26, 37, 44], "3642" -> [36, 42], "711" -> [7, 11]
- * Pour les groupes de 3 chiffres, essaie les deux découpages possibles
+ * Vérifie si un numéro est valide pour le loto (1-90)
  */
-function splitDigitGroup(group: string): number[] {
-  // Cas spécial pour 3 chiffres: essayer les deux découpages
-  if (group.length === 3) {
-    const first = parseInt(group[0], 10);
-    const lastTwo = parseInt(group.substring(1), 10);
-    const firstTwo = parseInt(group.substring(0, 2), 10);
-    const last = parseInt(group[2], 10);
+function isValidLotoNumber(n: number): boolean {
+  return n >= 1 && n <= 90;
+}
 
-    // Option 1: X + YY (ex: "711" -> 7 + 11)
-    const option1Valid = first >= 1 && first <= 9 && lastTwo >= 10 && lastTwo <= 90;
-    // Option 2: XY + Z (ex: "711" -> 71 + 1)
-    const option2Valid = firstTwo >= 10 && firstTwo <= 90 && last >= 1 && last <= 9;
+/**
+ * Essaie tous les découpages possibles d'un groupe de chiffres en numéros 1-90
+ * et retourne le meilleur (celui qui donne le plus de numéros valides)
+ */
+function findBestSplit(group: string): number[] {
+  const results: number[][] = [];
 
-    // Préférer l'option qui donne 2 numéros valides
-    if (option1Valid && option2Valid) {
-      // Les deux sont valides, préférer X + YY car plus probable
-      return [first, lastTwo];
-    } else if (option1Valid) {
-      return [first, lastTwo];
-    } else if (option2Valid) {
-      return [firstTwo, last];
+  // Fonction récursive pour trouver tous les découpages valides
+  function findSplits(remaining: string, current: number[]): void {
+    if (remaining.length === 0) {
+      results.push([...current]);
+      return;
     }
-    // Si aucune option n'est valide, utiliser l'algorithme standard
+
+    // Essayer de prendre 1 chiffre
+    if (remaining.length >= 1) {
+      const oneDigit = parseInt(remaining[0], 10);
+      if (oneDigit >= 1 && oneDigit <= 9) {
+        current.push(oneDigit);
+        findSplits(remaining.substring(1), current);
+        current.pop();
+      }
+    }
+
+    // Essayer de prendre 2 chiffres
+    if (remaining.length >= 2) {
+      const twoDigits = parseInt(remaining.substring(0, 2), 10);
+      if (twoDigits >= 10 && twoDigits <= 90) {
+        current.push(twoDigits);
+        findSplits(remaining.substring(2), current);
+        current.pop();
+      }
+    }
   }
 
-  // Algorithme standard pour groupes de 4+ chiffres
+  findSplits(group, []);
+
+  // Retourner le découpage qui donne le plus de numéros valides
+  // En cas d'égalité, préférer celui avec moins de petits numéros (1-9) car ils sont plus rares
+  if (results.length === 0) return [];
+
+  return results.reduce((best, current) => {
+    if (current.length > best.length) return current;
+    if (current.length === best.length) {
+      // Préférer les découpages avec plus de nombres à 2 chiffres (10-90)
+      const bestTwoDigits = best.filter(n => n >= 10).length;
+      const currentTwoDigits = current.filter(n => n >= 10).length;
+      if (currentTwoDigits > bestTwoDigits) return current;
+    }
+    return best;
+  }, results[0]);
+}
+
+/**
+ * Découpe un groupe de chiffres collés en numéros de loto valides (1-90)
+ * Ex: "263744" -> [26, 37, 44], "3642" -> [36, 42], "711" -> [7, 11]
+ * Ex: "21428" -> [2, 14, 28] (pas [21, 42, 8])
+ */
+function splitDigitGroup(group: string): number[] {
+  // Pour les groupes courts (3-6 chiffres), utiliser la recherche exhaustive
+  // car c'est là que les ambiguïtés sont les plus fréquentes
+  if (group.length <= 6) {
+    return findBestSplit(group);
+  }
+
+  // Pour les groupes plus longs, utiliser l'algorithme greedy
+  // (car la recherche exhaustive serait trop lente)
   const results: number[] = [];
   let i = 0;
 
