@@ -9,6 +9,11 @@ interface SavedGameState {
   wins: WinEvent[];
   startedAt: string | null;
   isPlaying: boolean;
+  // État du tirage pour restaurer Q/DQ/CP correct
+  tirageState?: {
+    currentGroupIndex: number;
+    currentTypeInGroup: 'Q' | 'DQ' | 'CP';
+  };
 }
 
 // Fonctions de persistance avec Vercel KV
@@ -79,6 +84,15 @@ async function decrementBallFrequency(ballNumber: number) {
   } catch (error) {
     console.error('❌ Erreur décrémentation fréquence:', error);
   }
+}
+
+// Helper pour obtenir l'état du tirage à sauvegarder
+function getTirageStateForSave(): SavedGameState['tirageState'] {
+  const tirageState = useTirageStore.getState();
+  return {
+    currentGroupIndex: tirageState.currentGroupIndex,
+    currentTypeInGroup: tirageState.currentTypeInGroup,
+  };
 }
 
 async function savePlanchesToKV(planches: Planche[]) {
@@ -435,6 +449,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
         startedAt: gameState.startedAt ? new Date(gameState.startedAt) : null,
         isPlaying: gameState.isPlaying || false,
       });
+
+      // Restaurer l'état du tirage (Q/DQ/CP) si sauvegardé
+      if (gameState.tirageState) {
+        useTirageStore.setState({
+          currentGroupIndex: gameState.tirageState.currentGroupIndex,
+          currentTypeInGroup: gameState.tirageState.currentTypeInGroup,
+        });
+        console.log('🎯 État du tirage restauré: groupe', gameState.tirageState.currentGroupIndex, 'type', gameState.tirageState.currentTypeInGroup);
+      }
+
       console.log('🎮 État du jeu restauré:', gameState.drawnBalls.length, 'boules,', gameState.wins?.length || 0, 'gains');
     }
   },
@@ -494,12 +518,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
       startedAt: newStartedAt, // Nouveau départ pour le prochain groupe
     });
 
-    // Sauvegarder l'état vide (nouvelle partie)
+    // Sauvegarder l'état vide (nouvelle partie) avec l'état du tirage
     saveGameStateToKV({
       drawnBalls: [],
       wins: [],
       startedAt: newStartedAt.toISOString(),
       isPlaying: true,
+      tirageState: getTirageStateForSave(),
     });
   },
 
@@ -551,12 +576,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
       wins: allWins,
     });
 
-    // Sauvegarder l'état du jeu après chaque boule tirée
+    // Sauvegarder l'état du jeu après chaque boule tirée (avec état du tirage)
     saveGameStateToKV({
       drawnBalls: newDrawnBalls,
       wins: allWins,
       startedAt: state.startedAt?.toISOString() || null,
       isPlaying: true,
+      tirageState: getTirageStateForSave(),
     });
 
     // Mettre à jour les stats de fréquence en temps réel
@@ -576,12 +602,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
       wins: newWins,
     });
 
-    // Sauvegarder l'état du jeu après annulation
+    // Sauvegarder l'état du jeu après annulation (avec état du tirage)
     saveGameStateToKV({
       drawnBalls: newDrawnBalls,
       wins: newWins,
       startedAt: state.startedAt?.toISOString() || null,
       isPlaying: state.isPlaying,
+      tirageState: getTirageStateForSave(),
     });
 
     // Décrémenter les stats de fréquence

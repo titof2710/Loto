@@ -226,21 +226,28 @@ export const useTirageStore = create<TirageStore>()((set, get) => ({
     return get().currentTypeInGroup === 'CP';
   },
 
-  // Définir manuellement le type quand l'OCR échoue
-  // Crée un lot manuel avec le type sélectionné ET met à jour le type courant
+  // Définir manuellement le type (Q/DQ/CP)
+  // Utilisé pour :
+  // 1. Quand l'OCR échoue et le lot n'est pas trouvé
+  // 2. Quand il y a un tirage surprise qui décale l'ordre normal
   setManualPrizeType: (type: PrizeType) => {
     const state = get();
     const prizeNumber = get().getCurrentPrizeNumber();
 
-    // Créer un lot manuel
-    const manualPrize: LotoPrize = {
-      number: prizeNumber,
-      type,
-      description: `Lot #${prizeNumber} (manuel)`,
-    };
+    // Vérifier si un lot existe déjà pour ce numéro
+    const existingPrize = state.currentTirage?.prizes.find(p => p.number === prizeNumber);
 
-    // Ajouter le lot à la liste si le tirage existe
-    if (state.currentTirage) {
+    if (existingPrize) {
+      // Le lot existe déjà, on change juste le type courant
+      set({ currentTypeInGroup: type });
+    } else if (state.currentTirage) {
+      // Le lot n'existe pas, on le crée manuellement
+      const manualPrize: LotoPrize = {
+        number: prizeNumber,
+        type,
+        description: `Lot #${prizeNumber} (manuel)`,
+      };
+
       const updatedPrizes = [...state.currentTirage.prizes, manualPrize];
       const updatedTirage = {
         ...state.currentTirage,
@@ -249,11 +256,14 @@ export const useTirageStore = create<TirageStore>()((set, get) => ({
 
       set(s => ({
         currentTirage: updatedTirage,
-        currentTypeInGroup: type, // IMPORTANT: Mettre à jour le type courant !
+        currentTypeInGroup: type,
         allTirages: s.allTirages.map(t =>
           t.id === updatedTirage.id ? updatedTirage : t
         ),
       }));
+    } else {
+      // Pas de tirage, juste changer le type
+      set({ currentTypeInGroup: type });
     }
   },
 }));

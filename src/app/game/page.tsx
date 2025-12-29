@@ -267,6 +267,7 @@ export default function GamePage() {
         tirageName={currentTirage?.title}
         allPrizes={currentTirage?.prizes}
         isLoading={isPrizesLoading}
+        currentType={currentTypeInGroup}
         onChangeTirage={tirageSelector.open}
         onSkipToNext={advanceToNextType}
         onSelectType={setManualPrizeType}

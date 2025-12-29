@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Gift, ChevronRight, Loader2, List, X, AlertTriangle } from 'lucide-react';
+import { Gift, ChevronRight, Loader2, List, X, AlertTriangle, Edit3 } from 'lucide-react';
 import type { LotoPrize, PrizeType } from '@/types';
 import { cn } from '@/lib/utils/cn';
 
@@ -11,9 +11,10 @@ interface CurrentPrizeProps {
   tirageName?: string;
   allPrizes?: LotoPrize[]; // Tous les lots pour la modal
   isLoading?: boolean;
+  currentType?: PrizeType; // Type actuellement joué (Q/DQ/CP)
   onChangeTirage?: () => void;
   onSkipToNext?: () => void; // Pour passer au lot suivant si celui-ci manque
-  onSelectType?: (type: PrizeType) => void; // Pour sélectionner manuellement le type quand OCR échoue
+  onSelectType?: (type: PrizeType) => void; // Pour sélectionner/modifier manuellement le type
 }
 
 // Couleurs par type de gain
@@ -48,11 +49,13 @@ export function CurrentPrize({
   tirageName,
   allPrizes,
   isLoading,
+  currentType,
   onChangeTirage,
   onSkipToNext,
   onSelectType
 }: CurrentPrizeProps) {
   const [showAllPrizes, setShowAllPrizes] = useState(false);
+  const [showTypeSelector, setShowTypeSelector] = useState(false);
 
   if (isLoading) {
     return (
@@ -185,15 +188,17 @@ export function CurrentPrize({
     );
   }
 
-  const colors = typeColors[prize.type];
+  // Utiliser currentType si fourni, sinon le type du prize
+  const activeType = currentType || prize.type;
+  const colors = typeColors[activeType];
 
   return (
     <>
       <div className={cn(
         'rounded-xl border-2 overflow-hidden transition-all',
-        prize.type === 'Q' && 'border-green-500 bg-green-500/5',
-        prize.type === 'DQ' && 'border-purple-500 bg-purple-500/5',
-        prize.type === 'CP' && 'border-yellow-500 bg-yellow-500/5',
+        activeType === 'Q' && 'border-green-500 bg-green-500/5',
+        activeType === 'DQ' && 'border-purple-500 bg-purple-500/5',
+        activeType === 'CP' && 'border-yellow-500 bg-yellow-500/5',
       )}>
         {/* En-tête avec nom du tirage */}
         {tirageName && (
@@ -225,19 +230,27 @@ export function CurrentPrize({
         {/* Cadeau actuel */}
         <div className="p-4">
           <div className="flex items-start gap-3">
-            {/* Badge type */}
-            <div className={cn(
-              'flex-shrink-0 w-12 h-12 rounded-lg flex items-center justify-center text-white font-bold text-lg',
-              colors.bg
-            )}>
-              {prize.type}
-            </div>
+            {/* Badge type - cliquable pour modifier */}
+            <button
+              onClick={() => onSelectType && setShowTypeSelector(!showTypeSelector)}
+              className={cn(
+                'flex-shrink-0 w-12 h-12 rounded-lg flex items-center justify-center text-white font-bold text-lg relative',
+                colors.bg,
+                onSelectType && 'cursor-pointer hover:opacity-90 active:scale-95 transition-all'
+              )}
+              title={onSelectType ? 'Cliquer pour changer le type' : undefined}
+            >
+              {activeType}
+              {onSelectType && (
+                <Edit3 className="w-3 h-3 absolute -top-1 -right-1 bg-white text-gray-600 rounded-full p-0.5" />
+              )}
+            </button>
 
             {/* Détails */}
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-1">
                 <span className={cn('text-xs font-semibold px-2 py-0.5 rounded', colors.badge)}>
-                  {typeLabels[prize.type]}
+                  {typeLabels[activeType]}
                 </span>
                 <span className="text-xs text-[var(--muted-foreground)]">
                   Lot #{prize.number}
@@ -248,6 +261,53 @@ export function CurrentPrize({
               </p>
             </div>
           </div>
+
+          {/* Sélecteur de type (affiché quand on clique sur le badge) */}
+          {showTypeSelector && onSelectType && (
+            <div className="mt-3 pt-3 border-t border-[var(--border)]">
+              <p className="text-xs text-[var(--muted-foreground)] mb-2">
+                Tirage surprise ? Changer le type :
+              </p>
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  onClick={() => { onSelectType('Q'); setShowTypeSelector(false); }}
+                  className={cn(
+                    'flex flex-col items-center gap-1 p-2 rounded-lg font-bold transition-colors',
+                    activeType === 'Q'
+                      ? 'bg-green-500 text-white'
+                      : 'bg-green-500/20 text-green-600 hover:bg-green-500/30'
+                  )}
+                >
+                  <span>Q</span>
+                  <span className="text-xs font-normal">Quine</span>
+                </button>
+                <button
+                  onClick={() => { onSelectType('DQ'); setShowTypeSelector(false); }}
+                  className={cn(
+                    'flex flex-col items-center gap-1 p-2 rounded-lg font-bold transition-colors',
+                    activeType === 'DQ'
+                      ? 'bg-purple-500 text-white'
+                      : 'bg-purple-500/20 text-purple-600 hover:bg-purple-500/30'
+                  )}
+                >
+                  <span>DQ</span>
+                  <span className="text-xs font-normal">Double Q</span>
+                </button>
+                <button
+                  onClick={() => { onSelectType('CP'); setShowTypeSelector(false); }}
+                  className={cn(
+                    'flex flex-col items-center gap-1 p-2 rounded-lg font-bold transition-colors',
+                    activeType === 'CP'
+                      ? 'bg-yellow-500 text-white'
+                      : 'bg-yellow-500/20 text-yellow-600 hover:bg-yellow-500/30'
+                  )}
+                >
+                  <span>CP</span>
+                  <span className="text-xs font-normal">Carton P</span>
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
